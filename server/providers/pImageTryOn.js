@@ -103,6 +103,7 @@ async function runTryOn({ modelImage, garmentImage, turbo, category }) {
   let fallbackUsed = false;
   let fallbackReason = null;
   let tryOnResultUrl;
+  let bodyDetection = null;
 
   const fallbackEnabled = process.env.ENABLE_FACE_SWAP_FALLBACK !== 'false';
 
@@ -116,6 +117,8 @@ async function runTryOn({ modelImage, garmentImage, turbo, category }) {
       console.error('Pose detection failed after retries, assuming full body:', err.message);
       detection = { fullBodyDetected: true, reason: `Detection error (${err.message}), failed open` };
     }
+
+    bodyDetection = { fullBodyDetected: detection.fullBodyDetected, reason: detection.reason };
 
     if (!detection.fullBodyDetected) {
       fallbackUsed = true;
@@ -161,7 +164,7 @@ async function runTryOn({ modelImage, garmentImage, turbo, category }) {
     }
   }
 
-  return { imageUrl, upscaled, upscaleWarning, fallbackUsed, fallbackReason };
+  return { imageUrl, upscaled, upscaleWarning, fallbackUsed, fallbackReason, bodyDetection };
 }
 
 module.exports = { runTryOn };
