@@ -156,10 +156,7 @@ async function runTryOn({ modelImage, garmentImage, turbo, category }) {
         console.error(upscaleWarning);
       }
     } catch (err) {
-      const is429 = err.message && err.message.includes('429');
-      upscaleWarning = is429
-        ? `Upscale step failed after retries: Replicate rate limit (429). This can happen even with credit/card on file if requests burst faster than ~1/sec — check Render logs for the exact error body. Showing raw (unupscaled) result.`
-        : `Upscale step failed (${err.message}) — showing raw (unupscaled) try-on result.`;
+      upscaleWarning = `Upscale step failed after retries: ${err.message} — showing raw (unupscaled) result.`;
       console.error('p-image-upscale step failed, returning unupscaled result:', err.message);
     }
   }
