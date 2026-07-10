@@ -296,12 +296,29 @@
 
     try {
       const res = await fetch('/api/tryon', { method: 'POST', body: form });
-      const data = await res.json();
+
+      let data;
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        // Server/platform returned something non-JSON (e.g. a host's error page
+        // during a cold start or timeout) — surface a useful message instead of
+        // crashing on JSON.parse.
+        const text = await res.text();
+        throw new Error(
+          `Server returned an unexpected response (HTTP ${res.status}). ` +
+          `This usually means the server was still starting up or timed out — wait a few seconds and try again.` +
+          (text ? ` [${text.slice(0, 120)}]` : '')
+        );
+      }
+
       if (!res.ok) throw new Error(data.error || 'Generation failed');
 
       resultImg.src = data.imageUrl;
       resultEl.style.display = 'block';
-      statusEl.textContent = 'Done.';
+      statusEl.textContent = data.upscaleWarning ? `Done — note: ${data.upscaleWarning}` : 'Done.';
+      if (data.upscaleWarning) statusEl.classList.add('err');
     } catch (err) {
       statusEl.textContent = err.message;
       statusEl.classList.add('err');

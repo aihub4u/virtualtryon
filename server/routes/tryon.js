@@ -71,7 +71,12 @@ router.post(
         return res.status(502).json({ error: 'Provider returned no image', raw: result.raw });
       }
 
-      res.json({ imageUrl: result.imageUrl, provider });
+      res.json({
+        imageUrl: result.imageUrl,
+        provider,
+        upscaled: result.upscaled ?? null,
+        upscaleWarning: result.upscaleWarning ?? null,
+      });
     } catch (err) {
       console.error('Try-on generation failed:', err);
       res.status(500).json({ error: err.message || 'Try-on generation failed' });

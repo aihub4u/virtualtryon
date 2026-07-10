@@ -36,34 +36,46 @@ async function runTryOn({ modelImage, garmentImage, turbo }) {
   });
 
   let imageUrl = Array.isArray(output) ? output[0] : output;
+  let upscaled = false;
+  let upscaleWarning = null;
 
   const shouldUpscale = process.env.UPSCALE_TRYON_RESULT !== 'false';
   if (shouldUpscale) {
     try {
-      const upscaled = await replicate.run(
+      const upscaledOutput = await replicate.run(
         'prunaai/p-image-upscale:7135ff723ecea89c0f67afcd51e4904904586e351093465bdc7beed45941b3e0',
         {
           input: {
             image: imageUrl,
             upscale_mode: 'target',
-            target: 4, // megapixels — plenty for web/product display, keeps cost low
+            target: 8, // max supported megapixels — stronger sharpening than the previous 4MP setting
             enhance_details: true,
             enhance_realism: true,
             output_format: 'jpg',
-            output_quality: 85,
+            output_quality: 90,
           },
         }
       );
-      const upscaledUrl = Array.isArray(upscaled) ? upscaled[0] : upscaled;
-      if (upscaledUrl) imageUrl = upscaledUrl;
+      const upscaledUrl = Array.isArray(upscaledOutput) ? upscaledOutput[0] : upscaledOutput;
+      if (upscaledUrl) {
+        imageUrl = upscaledUrl;
+        upscaled = true;
+        console.log('p-image-upscale succeeded:', upscaledUrl);
+      } else {
+        upscaleWarning = 'Upscale step returned no output — showing raw (unupscaled) try-on result.';
+        console.error(upscaleWarning);
+      }
     } catch (err) {
       // Don't fail the whole request if upscaling has a hiccup — fall back to
-      // the unupscaled (blurrier but valid) try-on result.
+      // the unupscaled (blurrier but valid) try-on result. IMPORTANT: this is
+      // now surfaced in the API response (upscaleWarning), not just server logs,
+      // so a silent fallback is actually visible to whoever's testing.
+      upscaleWarning = `Upscale step failed (${err.message}) — showing raw (unupscaled) try-on result.`;
       console.error('p-image-upscale step failed, returning unupscaled result:', err.message);
     }
   }
 
-  return { imageUrl, raw: output };
+  return { imageUrl, raw: output, upscaled, upscaleWarning };
 }
 
 module.exports = { runTryOn };

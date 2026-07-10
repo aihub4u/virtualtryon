@@ -54,8 +54,81 @@ Same pattern as your other Node services:
 
 If you want a custom domain like `tryon.karixforge.in`, add it the same way you did for `track.karixforge.in`.
 
-## Extending
+## Scaling for campaign traffic — the async job pipeline
 
-- **Swap in another Replicate model** (e.g. CatVTON for cost, or a newer model): add a new file in `providers/`, following the same `runTryOn({ modelImage, garmentImage }) -> { imageUrl }` shape, and reference it in `routes/tryon.js`.
-- **Persist results:** currently the generated image URL is returned straight to the frontend and nothing is stored. If you want a history (like the RedTag click log), log `{ timestamp, imageUrl, campaign }` to Google Sheets the same way you did there.
-- **Garment category / mode control:** FASHN's `category` (`auto`/`tops`/`bottoms`/`one-pieces`) and `mode` (`performance`/`balanced`/`quality`) params are hardcoded in `providers/fashn.js` — expose them as frontend controls if you need per-request tuning.
+The original `/api/tryon` (upload two files, wait for the result) works fine for casual use, but doesn't scale to a campaign: it holds an HTTP connection open for 5-15+ seconds per user (two chained Replicate calls), and Replicate deletes its output files after **1 hour** — so anyone who checks their result later than that gets a dead link.
+
+For anything sent to a real campaign audience, use **`POST /api/jobs`** + **`GET /api/jobs/:id`** instead:
+
+```
+POST /api/jobs
+{ "selfieUrl": "https://...", "garmentUrl": "https://..." }
+
+→ 202 { "id": "uuid", "status": "queued", "statusUrl": "/api/jobs/uuid" }
+```
+
+```
+GET /api/jobs/uuid
+
+→ { "id": "uuid", "status": "tryon_processing", "imageUrl": null, "error": null }
+→ ... (poll again later) ...
+→ { "id": "uuid", "status": "completed", "imageUrl": "https://cdn.../tryon-results/uuid.jpg", "error": null }
+```
+
+Status values: `queued` → `tryon_processing` → `tryon_done` → `upscale_processing` → `completed` (or `failed` at any point, with `error` populated).
+
+### How it avoids falling over under load
+
+1. **The API never waits on Replicate.** `POST /api/jobs` just writes a job record to Redis and pushes it onto a queue, then returns immediately. This is why it can absorb a traffic spike from a campaign blast without every request piling up.
+2. **A separate worker process drains the queue at a controlled rate** (5 dispatches/sec = 300/min), well under Replicate's 600 requests per minute prediction-creation limit — even with the try-on + upscale chain effectively doubling calls per job.
+3. **The worker never waits on Replicate either.** It fires each prediction with a `webhook` URL and moves on — Replicate calls back when the prediction finishes. This is what lets one small worker dispatch thousands of jobs without holding thousands of connections open.
+4. **Results get copied to permanent storage (Cloudflare R2) the moment the webhook fires** — required, because predictions created through the API have all input parameters, output values, output files, and logs automatically removed after an hour by default.
+5. **Per-IP rate limiting on job creation** (10/min by default in `routes/jobs.js`) — a cost guardrail, since every generation is real Replicate spend.
+
+### New pieces
+
+| File | Role |
+|---|---|
+| `lib/redisClient.js` | Shared Redis connection (lazy — only connects if `REDIS_URL` is set) |
+| `lib/jobStore.js` | Job status + prediction→job mapping, stored in Redis with TTLs |
+| `lib/storage.js` | Copies the final image to Cloudflare R2 before Replicate's 1-hour window closes |
+| `queue/queue.js` | BullMQ queue definition, shared by API and worker |
+| `queue/worker.js` | **Separate process** — drains the queue, dispatches to Replicate via webhook |
+| `routes/jobs.js` | `POST /api/jobs`, `GET /api/jobs/:id` |
+| `routes/webhooks.js` | Receives Replicate's callbacks, verifies signature, advances job state |
+
+### Setup
+
+1. **Redis** — create a free/cheap database at https://upstash.com, copy the `rediss://...` connection string into `REDIS_URL`.
+2. **Replicate webhook secret** — needed to verify callbacks actually came from Replicate. Fetch it:
+   ```js
+   const secret = await replicate.webhooks.default.secret.get();
+   ```
+   or from the Replicate dashboard. Set as `REPLICATE_WEBHOOK_SECRET`.
+3. **Cloudflare R2** — create a bucket at https://dash.cloudflare.com → R2, create an API token scoped to it, set `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_PUBLIC_BASE_URL` (the bucket's `r2.dev` URL, or your own domain mapped to it).
+4. **`WEBHOOK_BASE_URL`** — your API's public URL (Render gives you one automatically). Replicate needs to reach this from the internet, so local testing requires a tunnel (e.g. ngrok) — `localhost` won't work.
+
+### Deploying the worker on Render
+
+The worker (`queue/worker.js`) must run as its own process — it's not part of the same request/response cycle as the API.
+
+- Render dashboard → New → **Background Worker** (not Web Service)
+- Root directory: `server`
+- Build command: `npm install`
+- Start command: `npm run worker`
+- Same environment variables as the API service (`REDIS_URL`, `REPLICATE_API_TOKEN`, `WEBHOOK_BASE_URL`, `R2_*`)
+
+Both the API service and the worker read/write the same Redis and Replicate account, so they need matching env vars but are deployed as two separate Render services from the same repo.
+
+### Cost math — read this before a real campaign launch
+
+Each completed try-on costs roughly:
+- `p-image-try-on`: $0.015 (first garment)
+- `p-image-upscale`: ~$0.01-0.02 (varies by target resolution)
+- R2 storage: negligible per-image, but add up storage + Class A operation costs at scale
+- **≈ $0.03-0.04 per completed generation**
+
+At 100K generations: ~$3,000-4,000. At 1M: ~$30,000-40,000. There's no built-in spend cap in this code — the per-IP rate limiter slows abuse but doesn't cap total spend. Before a real launch, consider:
+- Setting a hard daily/total job-creation counter (e.g. a Redis counter checked in `routes/jobs.js`) that returns 503 once a budget threshold is hit
+- Replicate's own spend alerts/prepaid credit limits (dashboard → billing)
+- Deciding upfront whether uncapped campaign reach is intended, or whether a "first N free tries" model is safer
