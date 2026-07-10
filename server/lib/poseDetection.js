@@ -26,61 +26,56 @@ const CONFIDENCE_THRESHOLD = 0.4;
 
 /**
  * Returns { fullBodyDetected, reason, raw }.
- * Fails OPEN on any error or unrecognized output shape — i.e. if detection
- * itself breaks, we assume full-body and proceed with the normal (cheaper,
- * simpler) try-on path rather than blocking the whole request on a
- * detection-step bug.
+ * Throws on Replicate API errors (so the caller's retry wrapper can actually
+ * retry a 429) — only fails open (assumes full body) when the call succeeds
+ * but returns output we can't parse into keypoints, since that's a genuine
+ * "we don't understand this shape" case, not a transient failure.
  */
 async function detectFullBody(replicate, imageUrl) {
-  try {
-    const output = await replicate.run('ultralytics/yolo26-pose', {
-      input: {
-        image: imageUrl,
-        model_size: 'n', // nano — fastest/cheapest, plenty for a coarse full-body check
-        conf: 0.25,
-      },
-    });
+  const output = await replicate.run('ultralytics/yolo26-pose', {
+    input: {
+      image: imageUrl,
+      model_size: 'n', // nano — fastest/cheapest, plenty for a coarse full-body check
+      conf: 0.25,
+    },
+  });
 
-    // Expected shape (best guess, VERIFY against live schema): an array of
-    // detected people, each with a `keypoints` array of [x, y, confidence]
-    // triples indexed per COCO-pose order. Handle a couple of plausible
-    // shapes defensively since this is unconfirmed.
-    const detections = Array.isArray(output) ? output : output?.predictions || output?.detections;
-    if (!detections || detections.length === 0) {
-      return { fullBodyDetected: false, reason: 'No person detected', raw: output };
-    }
-
-    const person = detections[0];
-    const keypoints = person.keypoints || person.keypoints_xy || person.kpts;
-    if (!keypoints || keypoints.length < 13) {
-      // Can't parse keypoints in the shape we expected — fail open.
-      return { fullBodyDetected: true, reason: 'Unrecognized keypoint format, assuming full body', raw: output };
-    }
-
-    const conf = (idx) => {
-      const kp = keypoints[idx];
-      // Support [x, y, conf] triples or {x, y, confidence} objects
-      return Array.isArray(kp) ? kp[2] : kp?.confidence ?? kp?.conf ?? 0;
-    };
-
-    const shouldersVisible =
-      conf(KEYPOINT.LEFT_SHOULDER) > CONFIDENCE_THRESHOLD || conf(KEYPOINT.RIGHT_SHOULDER) > CONFIDENCE_THRESHOLD;
-    const hipsVisible =
-      conf(KEYPOINT.LEFT_HIP) > CONFIDENCE_THRESHOLD || conf(KEYPOINT.RIGHT_HIP) > CONFIDENCE_THRESHOLD;
-
-    // Require at least shoulders for a "top" try-on to make sense; hips too
-    // if we want to be stricter about full-body. Shoulders-visible is the
-    // practical bar — most tops/dresses just need the torso.
-    return {
-      fullBodyDetected: shouldersVisible,
-      reason: shouldersVisible ? 'Shoulders detected' : 'Face-only crop — shoulders not visible',
-      hipsVisible,
-      raw: output,
-    };
-  } catch (err) {
-    console.error('Pose detection failed, assuming full body and proceeding normally:', err.message);
-    return { fullBodyDetected: true, reason: `Detection error (${err.message}), failed open`, raw: null };
+  // Expected shape (best guess, VERIFY against live schema): an array of
+  // detected people, each with a `keypoints` array of [x, y, confidence]
+  // triples indexed per COCO-pose order. Handle a couple of plausible
+  // shapes defensively since this is unconfirmed.
+  const detections = Array.isArray(output) ? output : output?.predictions || output?.detections;
+  if (!detections || detections.length === 0) {
+    return { fullBodyDetected: false, reason: 'No person detected', raw: output };
   }
+
+  const person = detections[0];
+  const keypoints = person.keypoints || person.keypoints_xy || person.kpts;
+  if (!keypoints || keypoints.length < 13) {
+    // Can't parse keypoints in the shape we expected — fail open.
+    return { fullBodyDetected: true, reason: 'Unrecognized keypoint format, assuming full body', raw: output };
+  }
+
+  const conf = (idx) => {
+    const kp = keypoints[idx];
+    // Support [x, y, conf] triples or {x, y, confidence} objects
+    return Array.isArray(kp) ? kp[2] : kp?.confidence ?? kp?.conf ?? 0;
+  };
+
+  const shouldersVisible =
+    conf(KEYPOINT.LEFT_SHOULDER) > CONFIDENCE_THRESHOLD || conf(KEYPOINT.RIGHT_SHOULDER) > CONFIDENCE_THRESHOLD;
+  const hipsVisible =
+    conf(KEYPOINT.LEFT_HIP) > CONFIDENCE_THRESHOLD || conf(KEYPOINT.RIGHT_HIP) > CONFIDENCE_THRESHOLD;
+
+  // Require at least shoulders for a "top" try-on to make sense; hips too
+  // if we want to be stricter about full-body. Shoulders-visible is the
+  // practical bar — most tops/dresses just need the torso.
+  return {
+    fullBodyDetected: shouldersVisible,
+    reason: shouldersVisible ? 'Shoulders detected' : 'Face-only crop — shoulders not visible',
+    hipsVisible,
+    raw: output,
+  };
 }
 
 module.exports = { detectFullBody };
