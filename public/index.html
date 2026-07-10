@@ -255,7 +255,13 @@
     const thumb = document.getElementById(thumbId);
     const text = document.getElementById(textId);
 
-    dz.addEventListener('click', () => input.click());
+    // NOTE: no manual dz.click() -> input.click() wiring here on purpose.
+    // `input` is a descendant of the `<label>` (dz), so the browser already
+    // opens the file picker natively on click. Adding a second, JS-triggered
+    // input.click() on top of that causes a double-fire that mobile browsers
+    // (notably iOS Safari) can silently drop — the picker opens, a photo
+    // gets picked, but the `change` event never registers. Native-only
+    // triggering fixes that.
     input.addEventListener('change', () => {
       const file = input.files[0];
       if (!file) return;

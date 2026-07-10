@@ -23,10 +23,23 @@ function fileToDataUri(file) {
 
 router.post(
   '/',
-  upload.fields([
-    { name: 'selfie', maxCount: 1 },
-    { name: 'product', maxCount: 1 },
-  ]),
+  (req, res, next) => {
+    upload.fields([
+      { name: 'selfie', maxCount: 1 },
+      { name: 'product', maxCount: 1 },
+    ])(req, res, (err) => {
+      if (err) {
+        // Multer errors (file too large, wrong type, etc.) land here — return
+        // clean JSON instead of letting them fall through to Express's
+        // default HTML error page, which the frontend can't parse.
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          return res.status(413).json({ error: 'Image too large — please use a photo under 10MB.' });
+        }
+        return res.status(400).json({ error: err.message || 'Upload failed' });
+      }
+      next();
+    });
+  },
   async (req, res) => {
     try {
       const selfieFile = req.files?.selfie?.[0];
