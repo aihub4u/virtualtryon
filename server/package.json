@@ -1,0 +1,19 @@
+{
+  "name": "virtual-tryon-server",
+  "version": "1.0.0",
+  "description": "Virtual try-on API: product image + selfie -> generated try-on image, powered by Replicate",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "multer": "^2.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "replicate": "^0.34.1",
+    "node-fetch": "^2.7.0"
+  }
+}

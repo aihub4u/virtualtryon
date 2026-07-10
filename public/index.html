@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Fitting Room — Virtual Try-On</title>
+<style>
+  :root {
+    --paper: #EDEAE2;
+    --ink: #17181C;
+    --ink-soft: #55565C;
+    --line: #C9C5B9;
+    --panel: #F7F5EF;
+    --cobalt: #2C3E8C;
+    --cobalt-dark: #1F2C66;
+    --tag-red: #A5333F;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .display {
+    font-family: Georgia, 'Times New Roman', serif;
+  }
+  header {
+    padding: 2.5rem 1.5rem 1.5rem;
+    border-bottom: 1px solid var(--line);
+  }
+  header .eyebrow {
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--tag-red);
+    font-weight: 600;
+  }
+  header h1 {
+    font-size: 2rem;
+    margin: 0.4rem 0 0.3rem;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+  }
+  header p {
+    margin: 0;
+    color: var(--ink-soft);
+    font-size: 0.95rem;
+    max-width: 40ch;
+  }
+  main {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 1.5rem;
+  }
+  .step {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+    padding: 1.5rem 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .step-num {
+    font-family: Georgia, serif;
+    font-size: 0.8rem;
+    color: var(--ink-soft);
+    letter-spacing: 0.05em;
+    padding-top: 0.2rem;
+    min-width: 2.2rem;
+  }
+  .step-body { flex: 1; }
+  .step-body h2 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0 0 0.6rem;
+  }
+  .dropzone {
+    border: 1px dashed var(--line);
+    background: var(--panel);
+    border-radius: 2px;
+    padding: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    cursor: pointer;
+    transition: border-color 0.15s ease;
+  }
+  .dropzone:hover { border-color: var(--cobalt); }
+  .dropzone.has-image { border-style: solid; }
+  .dropzone input { display: none; }
+  .thumb {
+    width: 64px;
+    height: 64px;
+    border-radius: 2px;
+    object-fit: cover;
+    background: var(--line);
+    flex-shrink: 0;
+    display: none;
+  }
+  .thumb.show { display: block; }
+  .dz-text {
+    font-size: 0.88rem;
+    color: var(--ink-soft);
+  }
+  .dz-text strong { color: var(--ink); }
+  textarea {
+    width: 100%;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    border-radius: 2px;
+    padding: 0.7rem;
+    font-family: inherit;
+    font-size: 0.9rem;
+    resize: vertical;
+    min-height: 2.5rem;
+  }
+  .cta-row {
+    padding: 1.5rem 0;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+  button.generate {
+    background: var(--cobalt);
+    color: #fff;
+    border: none;
+    padding: 0.85rem 1.6rem;
+    font-size: 0.9rem;
+    letter-spacing: 0.02em;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+  button.generate:hover:not(:disabled) { background: var(--cobalt-dark); }
+  button.generate:disabled {
+    background: var(--line);
+    cursor: not-allowed;
+  }
+  .status {
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+  }
+  .status.err { color: var(--tag-red); }
+  .result {
+    padding: 2rem 0;
+  }
+  .result-tag {
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--tag-red);
+    font-weight: 600;
+    margin-bottom: 0.8rem;
+  }
+  .result img {
+    width: 100%;
+    border-radius: 2px;
+    display: block;
+    background: var(--panel);
+  }
+  .spinner {
+    width: 14px; height: 14px;
+    border: 2px solid var(--line);
+    border-top-color: var(--cobalt);
+    border-radius: 50%;
+    display: inline-block;
+    animation: spin 0.7s linear infinite;
+    vertical-align: -2px;
+    margin-right: 0.4rem;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  footer {
+    text-align: center;
+    padding: 2rem 1.5rem 3rem;
+    color: var(--ink-soft);
+    font-size: 0.78rem;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="eyebrow">Fitting Room</div>
+  <h1 class="display">See it on, before you buy it.</h1>
+  <p>Upload a selfie and a product photo. We'll generate a realistic image of you wearing it.</p>
+</header>
+
+<main>
+  <div class="step">
+    <div class="step-num display">01</div>
+    <div class="step-body">
+      <h2>Your photo</h2>
+      <label class="dropzone" id="dz-selfie">
+        <input type="file" id="input-selfie" accept="image/*" />
+        <img class="thumb" id="thumb-selfie" />
+        <span class="dz-text" id="text-selfie"><strong>Upload a selfie</strong><br>Front-facing, good lighting, plain background works best</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num display">02</div>
+    <div class="step-body">
+      <h2>The product</h2>
+      <label class="dropzone" id="dz-product">
+        <input type="file" id="input-product" accept="image/*" />
+        <img class="thumb" id="thumb-product" />
+        <span class="dz-text" id="text-product"><strong>Upload a product image</strong><br>Flat-lay, ghost mannequin, or on-model — all work</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num display">03</div>
+    <div class="step-body">
+      <h2>Description <span style="color:var(--ink-soft); font-weight:400;">(optional)</span></h2>
+      <textarea id="description" placeholder="e.g. navy cotton oversized hoodie"></textarea>
+    </div>
+  </div>
+
+  <div class="cta-row">
+    <button class="generate" id="btn-generate">Generate try-on</button>
+    <span class="status" id="status"></span>
+  </div>
+
+  <div class="result" id="result" style="display:none;">
+    <div class="result-tag">Result</div>
+    <img id="result-img" alt="Virtual try-on result" />
+  </div>
+</main>
+
+<footer>Images are sent directly to the try-on model for generation and are not stored by this app.</footer>
+
+<script>
+  const state = { selfie: null, product: null };
+
+  function wireDropzone(key, dzId, inputId, thumbId, textId) {
+    const dz = document.getElementById(dzId);
+    const input = document.getElementById(inputId);
+    const thumb = document.getElementById(thumbId);
+    const text = document.getElementById(textId);
+
+    dz.addEventListener('click', () => input.click());
+    input.addEventListener('change', () => {
+      const file = input.files[0];
+      if (!file) return;
+      state[key] = file;
+      thumb.src = URL.createObjectURL(file);
+      thumb.classList.add('show');
+      dz.classList.add('has-image');
+      text.innerHTML = `<strong>${file.name}</strong><br>Click to change`;
+    });
+  }
+
+  wireDropzone('selfie', 'dz-selfie', 'input-selfie', 'thumb-selfie', 'text-selfie');
+  wireDropzone('product', 'dz-product', 'input-product', 'thumb-product', 'text-product');
+
+  const btn = document.getElementById('btn-generate');
+  const statusEl = document.getElementById('status');
+  const resultEl = document.getElementById('result');
+  const resultImg = document.getElementById('result-img');
+
+  btn.addEventListener('click', async () => {
+    if (!state.selfie || !state.product) {
+      statusEl.textContent = 'Please upload both a selfie and a product image.';
+      statusEl.classList.add('err');
+      return;
+    }
+    statusEl.classList.remove('err');
+    btn.disabled = true;
+    resultEl.style.display = 'none';
+    statusEl.innerHTML = '<span class="spinner"></span>Generating — this can take 10-60 seconds…';
+
+    const form = new FormData();
+    form.append('selfie', state.selfie);
+    form.append('product', state.product);
+    const desc = document.getElementById('description').value.trim();
+    if (desc) form.append('description', desc);
+
+    try {
+      const res = await fetch('/api/tryon', { method: 'POST', body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Generation failed');
+
+      resultImg.src = data.imageUrl;
+      resultEl.style.display = 'block';
+      statusEl.textContent = 'Done.';
+    } catch (err) {
+      statusEl.textContent = err.message;
+      statusEl.classList.add('err');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+</script>
+
+</body>
+</html>
