@@ -54,7 +54,27 @@ Same pattern as your other Node services:
 
 If you want a custom domain like `tryon.karixforge.in`, add it the same way you did for `track.karixforge.in`.
 
-## Scaling for campaign traffic — the async job pipeline
+## Face-only selfie fallback
+
+If someone uploads a headshot instead of a photo showing their torso, a direct try-on doesn't work well — there's no body to fit the garment onto. Instead of a broken result, the pipeline can detect this and reroute:
+
+1. **Detect body coverage** — `lib/poseDetection.js` runs `ultralytics/yolo26-pose` on the selfie and checks whether shoulders are visible.
+2. **If face-only** — instead of using the user's selfie directly, it runs the normal try-on with a **stock body photo** as the "person," then face-swaps the user's real face onto that result via `easel/advanced-face-swap` (`providers/faceSwap.js`).
+3. **If full body** — normal direct flow, no extra steps or cost.
+
+The API response now includes `fallbackUsed` (boolean) and `fallbackReason` (string) so you can tell which path a given request took.
+
+### Before this actually works, you must:
+
+1. **Add real stock photos.** Edit `server/config/stockModels.json` and replace the placeholder URLs with your own licensed, front-facing, neutral-pose stock photos. The fallback throws a clear error until you do this — it won't silently use a broken placeholder.
+2. **Verify two unconfirmed schemas.** I couldn't fetch either model's live API schema page from this environment (same limitation as `p-image-try-on` earlier, which needed one correction after real testing):
+   - `ultralytics/yolo26-pose` — check https://replicate.com/ultralytics/yolo26-pose/api. The input fields (`image`, `model_size`, `conf`) and the output keypoint parsing in `lib/poseDetection.js` are built from Ultralytics' documented COCO-pose keypoint order and a sibling model's naming convention, not a confirmed schema.
+   - `easel/advanced-face-swap` — check https://replicate.com/easel/advanced-face-swap/api. The fields used (`swap_image`, `target_image`, `hair_source`) come from Replicate's own published usage example, so these are more likely correct than the pose ones, but still worth a quick check.
+3. **Check both models' licenses** for commercial use before real campaign traffic, same as every other model in this stack.
+
+**Fails open by design:** if pose detection itself errors for any reason (bad schema guess, model down, etc.), it defaults to "full body" and proceeds with the normal direct try-on rather than blocking the request — so a bug in the detection step degrades to the old behavior, not a hard failure.
+
+**Cost note:** the fallback path is three model calls instead of one (try-on-on-stock-body + face-swap + upscale, vs. just try-on + upscale) — roughly 2-3x the cost of a direct try-on. Set `ENABLE_FACE_SWAP_FALLBACK=false` to disable it entirely if you'd rather have face-only selfies just produce a (likely poor) direct result than pay for the fallback chain.
 
 The original `/api/tryon` (upload two files, wait for the result) works fine for casual use, but doesn't scale to a campaign: it holds an HTTP connection open for 5-15+ seconds per user (two chained Replicate calls), and Replicate deletes its output files after **1 hour** — so anyone who checks their result later than that gets a dead link.
 

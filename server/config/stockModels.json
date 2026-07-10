@@ -1,0 +1,9 @@
+{
+  "_comment": "Stock full-body photos used when a user uploads a face-only selfie. The garment gets fitted onto one of these bodies, then the user's real face is swapped in. REPLACE these placeholder URLs with your own licensed stock photos before enabling the fallback — see README's 'Face-only selfie fallback' section.",
+  "_requirements": "Front-facing, neutral pose, plain background, well-lit, similar framing to a typical product-photo model shot. One per build/gender category is a reasonable starting set.",
+  "default": "https://REPLACE_ME_WITH_YOUR_OWN_LICENSED_STOCK_PHOTO_URL.jpg",
+  "categories": {
+    "feminine": "https://REPLACE_ME.jpg",
+    "masculine": "https://REPLACE_ME.jpg"
+  }
+}

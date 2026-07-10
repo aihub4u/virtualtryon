@@ -19,10 +19,46 @@
 // Also confirm the "License" tab on that page states commercial use is
 // permitted before sending real customer traffic through it.
 
+// providers/pImageTryOn.js
+// Uses prunaai/p-image-try-on, an OFFICIAL Replicate model purpose-built for
+// virtual try-on. Cheapest option found: $0.015 for the first garment,
+// $0.008 for each additional one. No self-hosting, no cold starts.
+//
+// Field names confirmed against a live 422 error from Replicate: person_image
+// and garment_images were accepted; a string "mode" field was rejected
+// ("Unexpected field 'mode'"). Pruna's sibling model p-image-edit uses a
+// boolean `turbo` field rather than a mode string, so this sends `turbo`
+// instead.
+//
+// FACE-ONLY FALLBACK: if the uploaded selfie doesn't show enough of the body
+// (a headshot rather than a torso+ shot), fitting a garment directly onto it
+// doesn't work well. In that case this pipeline instead: (1) runs the normal
+// try-on using a configured stock body photo as the "person", then (2) face-
+// swaps the user's real face onto that result via easel/advanced-face-swap.
+// See lib/poseDetection.js and lib/stockModel.js — and their header comments
+// on which parts are confirmed vs. best-effort schema guesses.
+//
+// Also confirm the "License" tab on the p-image-try-on model page states
+// commercial use is permitted before sending real customer traffic through it.
+
 const Replicate = require('replicate');
+const { detectFullBody } = require('../lib/poseDetection');
+const { getStockModelUrl } = require('../lib/stockModel');
+const { swapFace } = require('./faceSwap');
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function runPImageTryOn(replicate, personImage, garmentImage, turbo) {
+  const output = await replicate.run('prunaai/p-image-try-on', {
+    input: {
+      person_image: personImage,
+      garment_images: [garmentImage], // supports up to 11 — extend this array for multi-garment try-on
+      turbo: !!turbo,
+    },
+  });
+  return Array.isArray(output) ? output[0] : output;
 }
 
 async function runUpscaleWithRetry(replicate, imageUrl, attempts = 3) {
@@ -34,7 +70,7 @@ async function runUpscaleWithRetry(replicate, imageUrl, attempts = 3) {
           input: {
             image: imageUrl,
             upscale_mode: 'target',
-            target: 8, // max supported megapixels — stronger sharpening than the previous 4MP setting
+            target: 8, // max supported megapixels
             enhance_details: true,
             enhance_realism: true,
             output_format: 'jpg',
@@ -46,8 +82,6 @@ async function runUpscaleWithRetry(replicate, imageUrl, attempts = 3) {
       const is429 = err.message && err.message.includes('429');
       const isLastAttempt = i === attempts - 1;
       if (is429 && !isLastAttempt) {
-        // Replicate's 429 body includes a retry_after (seconds) — back off
-        // a bit longer than that to be safe rather than parsing it exactly.
         const waitMs = 2000 * (i + 1);
         console.warn(`Upscale hit 429, retrying in ${waitMs}ms (attempt ${i + 1}/${attempts})`);
         await sleep(waitMs);
@@ -58,21 +92,40 @@ async function runUpscaleWithRetry(replicate, imageUrl, attempts = 3) {
   }
 }
 
-async function runTryOn({ modelImage, garmentImage, turbo }) {
+async function runTryOn({ modelImage, garmentImage, turbo, category }) {
   const apiToken = process.env.REPLICATE_API_TOKEN;
   if (!apiToken) throw new Error('REPLICATE_API_TOKEN is not set');
 
   const replicate = new Replicate({ auth: apiToken });
 
-  const output = await replicate.run('prunaai/p-image-try-on', {
-    input: {
-      person_image: modelImage,
-      garment_images: [garmentImage], // supports up to 11 — extend this array for multi-garment try-on
-      turbo: !!turbo, // false (default) = quality mode, <2s/garment; true = faster, lower fidelity
-    },
-  });
+  let fallbackUsed = false;
+  let fallbackReason = null;
+  let tryOnResultUrl;
 
-  let imageUrl = Array.isArray(output) ? output[0] : output;
+  const fallbackEnabled = process.env.ENABLE_FACE_SWAP_FALLBACK !== 'false';
+
+  if (fallbackEnabled) {
+    const detection = await detectFullBody(replicate, modelImage);
+    if (!detection.fullBodyDetected) {
+      fallbackUsed = true;
+      fallbackReason = detection.reason;
+      console.log(`Face-only selfie detected (${detection.reason}) — using stock body + face swap fallback`);
+
+      const stockPhotoUrl = getStockModelUrl(category);
+      const tryOnOnStockBody = await runPImageTryOn(replicate, stockPhotoUrl, garmentImage, turbo);
+      tryOnResultUrl = await swapFace(replicate, {
+        userFaceImage: modelImage,
+        targetImage: tryOnOnStockBody,
+      });
+    }
+  }
+
+  if (!tryOnResultUrl) {
+    // Normal path: full body was detected, or fallback is disabled.
+    tryOnResultUrl = await runPImageTryOn(replicate, modelImage, garmentImage, turbo);
+  }
+
+  let imageUrl = tryOnResultUrl;
   let upscaled = false;
   let upscaleWarning = null;
 
@@ -90,10 +143,6 @@ async function runTryOn({ modelImage, garmentImage, turbo }) {
         console.error(upscaleWarning);
       }
     } catch (err) {
-      // Don't fail the whole request if upscaling has a hiccup — fall back to
-      // the unupscaled (blurrier but valid) try-on result. IMPORTANT: this is
-      // now surfaced in the API response (upscaleWarning), not just server logs,
-      // so a silent fallback is actually visible to whoever's testing.
       const is429 = err.message && err.message.includes('429');
       upscaleWarning = is429
         ? `Upscale step failed after retries: Replicate rate limit (429) — your account likely has under $5 credit. Add credit at replicate.com/account/billing to remove this throttle. Showing raw (unupscaled) result.`
@@ -102,7 +151,7 @@ async function runTryOn({ modelImage, garmentImage, turbo }) {
     }
   }
 
-  return { imageUrl, raw: output, upscaled, upscaleWarning };
+  return { imageUrl, upscaled, upscaleWarning, fallbackUsed, fallbackReason };
 }
 
 module.exports = { runTryOn };

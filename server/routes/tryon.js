@@ -89,6 +89,8 @@ router.post(
         provider,
         upscaled: result.upscaled ?? null,
         upscaleWarning: result.upscaleWarning ?? null,
+        fallbackUsed: result.fallbackUsed ?? null,
+        fallbackReason: result.fallbackReason ?? null,
       });
     } catch (err) {
       console.error('Try-on generation failed:', err);
