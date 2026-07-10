@@ -8,12 +8,18 @@ Upload a selfie + a product photo, get back a realistic image of the user wearin
 2. Backend (`server/`) — Express route converts both images to base64 data URIs and hands them to a **provider adapter**.
 3. Provider adapter calls the actual generation model and returns an image URL.
 
-Two providers are wired up out of the box, switchable via `.env`:
+Multiple providers are wired up, switchable via `.env`:
 
-| Provider | File | License | Notes |
-|---|---|---|---|
-| `fashn` (default) | `providers/fashn.js` | Commercial use OK | Direct REST to FASHN AI's own API (not via Replicate). ~5-19s per generation, $0.075ish/run. |
-| `idm-vton` | `providers/idmVton.js` | **Non-commercial only** (CC BY-NC-SA 4.0) | Via Replicate. Best for prototyping/demos — don't ship this one to a paying client without a separate license. |
+| Provider | File | Cost | License | Notes |
+|---|---|---|---|---|
+| `p-image-try-on` (default) | `providers/pImageTryOn.js` | $0.015 first garment + $0.008/additional | Verify on model page — see caveat below | Official Replicate model, purpose-built for try-on, supports up to 11 garments in one call, quality/turbo modes |
+| `idm-vton` | `providers/idmVton.js` | ~$0.024/run | **Non-commercial only** (CC BY-NC-SA 4.0) | Prototyping/demos only |
+| `fashn` | `providers/fashn.js` | ~$0.075/run | Commercial use explicitly permitted | Direct FASHN AI REST API, not via Replicate |
+| `fashn-selfhosted` | `providers/fashnVtonSelfHosted.js` | ~$0.01-0.02/run (raw GPU-seconds) | ⚠️ Unresolved — see `replicate-deploy/README.md` | Requires Cog packaging + your own Replicate deployment |
+
+**Before sending real customer traffic through `p-image-try-on`:** I built this adapter from Pruna's documented conventions, not a live schema fetch (blocked in my environment). Two things to verify yourself before production use:
+1. Open https://replicate.com/prunaai/p-image-try-on/api and confirm the input field names (`person_image`, `garment_images`, `mode`) match what's actually there — adjust `providers/pImageTryOn.js` if not.
+2. Check the "License" tab on that same page. Being an official Replicate model means it's stably hosted and priced, not that commercial use is automatically cleared — confirm explicitly.
 
 ## Setup
 
@@ -24,8 +30,9 @@ cp .env.example .env
 ```
 
 Fill in `.env`:
-- **If using FASHN (recommended for anything client-facing):** get an API key at https://app.fashn.ai → API keys. Set `FASHN_API_KEY`.
-- **If using IDM-VTON instead:** get a token at https://replicate.com/account/api-tokens, set `REPLICATE_API_TOKEN`, and set `TRYON_PROVIDER=idm-vton`.
+- **Default (`p-image-try-on`):** get a token at https://replicate.com/account/api-tokens, set `REPLICATE_API_TOKEN`. Confirm the license on the model page before commercial use (see caveat above).
+- **If using FASHN instead:** get an API key at https://app.fashn.ai → API keys. Set `FASHN_API_KEY` and `TRYON_PROVIDER=fashn`.
+- **If using IDM-VTON instead:** same `REPLICATE_API_TOKEN`, set `TRYON_PROVIDER=idm-vton`. Non-commercial only.
 
 Run locally:
 

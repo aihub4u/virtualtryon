@@ -219,6 +219,20 @@
     </div>
   </div>
 
+  <div class="step" style="border-bottom: none;">
+    <div class="step-num display">04</div>
+    <div class="step-body">
+      <h2>Quality</h2>
+      <label style="font-size: 0.88rem; color: var(--ink-soft);">
+        <input type="radio" name="mode" value="quality" checked /> Quality (best result, &lt;2s/garment)
+      </label>
+      <br>
+      <label style="font-size: 0.88rem; color: var(--ink-soft);">
+        <input type="radio" name="mode" value="turbo" /> Turbo (faster, lower fidelity)
+      </label>
+    </div>
+  </div>
+
   <div class="cta-row">
     <button class="generate" id="btn-generate">Generate try-on</button>
     <span class="status" id="status"></span>
@@ -277,6 +291,8 @@
     form.append('product', state.product);
     const desc = document.getElementById('description').value.trim();
     if (desc) form.append('description', desc);
+    const mode = document.querySelector('input[name="mode"]:checked').value;
+    form.append('mode', mode);
 
     try {
       const res = await fetch('/api/tryon', { method: 'POST', body: form });

@@ -42,20 +42,29 @@ router.post(
       const garmentImage = fileToDataUri(productFile);
       const garmentDescription = req.body.description || undefined;
 
-      const provider = (process.env.TRYON_PROVIDER || 'fashn').toLowerCase();
+      const provider = (process.env.TRYON_PROVIDER || 'p-image-try-on').toLowerCase();
       let providerModule;
-      if (provider === 'fashn') {
+      if (provider === 'p-image-try-on') {
+        providerModule = require('../providers/pImageTryOn');
+      } else if (provider === 'fashn') {
         providerModule = require('../providers/fashn');
       } else if (provider === 'idm-vton') {
         providerModule = require('../providers/idmVton');
+      } else if (provider === 'fashn-selfhosted') {
+        providerModule = require('../providers/fashnVtonSelfHosted');
       } else {
         return res.status(500).json({ error: `Unknown TRYON_PROVIDER "${provider}"` });
       }
+
+      const category = req.body.category || undefined; // "tops" | "bottoms" | "one-pieces" (self-hosted provider only)
+      const mode = req.body.mode || undefined; // "quality" | "turbo" (p-image-try-on only)
 
       const result = await providerModule.runTryOn({
         modelImage,
         garmentImage,
         garmentDescription,
+        category,
+        mode,
       });
 
       if (!result.imageUrl) {

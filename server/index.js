@@ -13,7 +13,7 @@ app.use(cors());
 app.use(express.json({ limit: '2mb' }));
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', provider: process.env.TRYON_PROVIDER || 'fashn' });
+  res.json({ status: 'ok', provider: process.env.TRYON_PROVIDER || 'p-image-try-on' });
 });
 
 app.use('/api/tryon', tryonRoute);
@@ -26,5 +26,5 @@ app.get('*', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Virtual try-on server running on port ${PORT}`);
-  console.log(`Provider: ${process.env.TRYON_PROVIDER || 'fashn'}`);
+  console.log(`Provider: ${process.env.TRYON_PROVIDER || 'p-image-try-on'}`);
 });

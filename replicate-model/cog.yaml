@@ -1,0 +1,37 @@
+# cog.yaml
+# Packages FASHN VTON v1.5 (Apache-2.0, github.com/fashn-AI/fashn-vton-1.5)
+# as a private Replicate model. Model weights are baked into the image at
+# build time so cold starts don't re-download ~2GB every time.
+#
+# Build this on a machine with an NVIDIA GPU + Docker + Cog installed, or let
+# Replicate build it for you (`cog push` streams the build to Replicate's
+# infra — see README.md in this folder for the exact commands).
+
+build:
+  gpu: true
+  cuda: "12.1"
+  python_version: "3.11"
+
+  system_packages:
+    - "libgl1"
+    - "libglib2.0-0"
+    - "git"
+
+  python_packages:
+    - "torch==2.3.1"
+    - "torchvision==0.18.1"
+    - "pillow"
+    - "numpy<2"
+
+  # Runs at image build time (not per-request), so the ~2GB of weights are
+  # baked into the container and every prediction after that is fast.
+  run:
+    - "git clone https://github.com/fashn-AI/fashn-vton-1.5.git /src/fashn-vton-1.5"
+    - "pip install -e /src/fashn-vton-1.5"
+    - "pip install onnxruntime-gpu"
+    - "python /src/fashn-vton-1.5/scripts/download_weights.py --weights-dir /src/weights"
+    # Pre-warm the human parser weights too, so setup() doesn't hit HuggingFace
+    # on first request. See predict.py setup() for how this cache is used.
+    - "python -c \"import os; os.environ['HF_HOME']='/src/hf-cache'; from fashn_vton import TryOnPipeline\" || true"
+
+predict: "predict.py:Predictor"

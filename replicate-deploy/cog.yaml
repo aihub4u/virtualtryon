@@ -1,0 +1,21 @@
+build:
+  gpu: true
+  cuda: "12.1"
+  python_version: "3.11"
+  system_packages:
+    - "libgl1"
+    - "libglib2.0-0"
+  python_packages:
+    - "torch==2.3.1"
+    - "torchvision==0.18.1"
+    - "pillow==10.4.0"
+    - "onnxruntime-gpu==1.18.1"
+    - "huggingface_hub==0.24.6"
+  run:
+    # Clone the official Apache-2.0 licensed repo and install it exactly the way upstream documents.
+    - "git clone https://github.com/fashn-AI/fashn-vton-1.5.git /src/fashn-vton-1.5"
+    - "pip install -e /src/fashn-vton-1.5"
+    # Download weights (~2GB) into the image at build time so cold starts don't pay a download tax.
+    - "python /src/fashn-vton-1.5/scripts/download_weights.py --weights-dir /src/fashn-vton-1.5/weights"
+
+predict: "predict.py:Predictor"

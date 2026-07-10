@@ -12,7 +12,7 @@ async function runTryOn({ modelImage, garmentImage, garmentDescription }) {
   const replicate = new Replicate({ auth: apiToken });
 
   const output = await replicate.run(
-    'cuuupid/idm-vton:c871bb9b046607b680449ecbae55fd8c6d945e0a52d4d2e8c6e2a89be7b60a1',
+    'cuuupid/idm-vton', // no pinned version -> Replicate resolves to the latest version automatically
     {
       input: {
         human_img: modelImage,
