@@ -292,7 +292,7 @@
     const desc = document.getElementById('description').value.trim();
     if (desc) form.append('description', desc);
     const mode = document.querySelector('input[name="mode"]:checked').value;
-    form.append('mode', mode);
+    form.append('turbo', mode === 'turbo' ? 'true' : 'false');
 
     try {
       const res = await fetch('/api/tryon', { method: 'POST', body: form });

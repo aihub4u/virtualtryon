@@ -3,20 +3,19 @@
 // virtual try-on. Cheapest option found: $0.015 for the first garment,
 // $0.008 for each additional one. No self-hosting, no cold starts.
 //
-// IMPORTANT: verify field names against the live schema before relying on
-// this in production — open https://replicate.com/prunaai/p-image-try-on/api
-// and diff it against the `input` object below. Field names here are based
-// on Pruna's documented conventions (see replicate-deploy/README.md notes)
-// but weren't confirmed against the live schema when this was written.
+// Field names confirmed against a live 422 error from Replicate: person_image
+// and garment_images were accepted; a string "mode" field was rejected
+// ("Unexpected field 'mode'"). Pruna's sibling model p-image-edit uses a
+// boolean `turbo` field rather than a mode string, so this now sends `turbo`
+// instead. If you hit another validation error, check
+// https://replicate.com/prunaai/p-image-try-on/api directly and adjust below.
 //
 // Also confirm the "License" tab on that page states commercial use is
-// permitted before sending real customer traffic through it — being an
-// "Official model" means Replicate keeps it online and stably priced, it
-// doesn't by itself guarantee the license terms you need.
+// permitted before sending real customer traffic through it.
 
 const Replicate = require('replicate');
 
-async function runTryOn({ modelImage, garmentImage, mode }) {
+async function runTryOn({ modelImage, garmentImage, turbo }) {
   const apiToken = process.env.REPLICATE_API_TOKEN;
   if (!apiToken) throw new Error('REPLICATE_API_TOKEN is not set');
 
@@ -26,7 +25,7 @@ async function runTryOn({ modelImage, garmentImage, mode }) {
     input: {
       person_image: modelImage,
       garment_images: [garmentImage], // supports up to 11 — extend this array for multi-garment try-on
-      mode: mode || 'quality', // "quality" (<2s/garment) | "turbo" (faster, lower fidelity)
+      turbo: !!turbo, // false (default) = quality mode, <2s/garment; true = faster, lower fidelity
     },
   });
 

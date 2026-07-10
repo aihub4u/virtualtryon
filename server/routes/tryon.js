@@ -57,14 +57,14 @@ router.post(
       }
 
       const category = req.body.category || undefined; // "tops" | "bottoms" | "one-pieces" (self-hosted provider only)
-      const mode = req.body.mode || undefined; // "quality" | "turbo" (p-image-try-on only)
+      const turbo = req.body.turbo === 'true'; // p-image-try-on only: true = faster/lower fidelity, false = quality mode
 
       const result = await providerModule.runTryOn({
         modelImage,
         garmentImage,
         garmentDescription,
         category,
-        mode,
+        turbo,
       });
 
       if (!result.imageUrl) {
