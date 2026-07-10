@@ -3,85 +3,55 @@
 // direct try-on, or whether it's a face-only crop that needs the
 // generic-body + face-swap fallback path instead.
 //
-// PREVIOUSLY this called ultralytics/yolo26-pose on Replicate — that model
-// slug turned out not to exist (confirmed via a live 404, not a guess), and
-// I wasn't able to verify the correct one from this environment after
-// several attempts. Rather than guess a third time, this now uses Claude's
-// vision capability directly via the Anthropic API instead — a schema I
-// actually know precisely, with no guessing involved. Requires
-// ANTHROPIC_API_KEY (separate from REPLICATE_API_TOKEN) — get one at
-// https://console.anthropic.com/settings/keys.
+// Uses lucataco/moondream2 on Replicate — a vision-language model, asked a
+// direct yes/no question about the photo. This replaces two earlier failed
+// attempts:
+//   1. ultralytics/yolo26-pose — confirmed via live 404 not to exist.
+//   2. Claude vision directly — worked, but the person asked for a
+//      Replicate-only solution instead.
+// moondream2's schema (input: `image`, `prompt`; output: list of text
+// strings) is corroborated across multiple independent sources (not a
+// single guessed page), and it's Apache-2.0 licensed — commercial-safe,
+// unlike some of the try-on models elsewhere in this stack. Still, if you
+// hit a validation error, check https://replicate.com/lucataco/moondream2/api
+// directly and adjust the input object below.
 
-const CLAUDE_MODEL = 'claude-sonnet-4-5-20250929';
+const QUESTION =
+  "Does this photo clearly show the person's shoulders and upper torso (not just a close-up face/headshot)? Answer with exactly one word: YES or NO.";
 
 /**
- * imageDataUri: a data:image/...;base64,... string (what fileToDataUri
- * produces in routes/tryon.js) or a plain https URL.
+ * imageInput: a data:image/...;base64,... string or a plain https URL —
+ * same shape passed to the try-on model elsewhere in this pipeline.
  * Returns { fullBodyDetected, reason }.
- * Throws on API errors (so the caller's retry wrapper can retry a 429) —
- * only fails open (assumes full body) if Claude's answer can't be parsed,
- * since that's a "we don't understand the response" case, not transient.
+ * Throws on Replicate API errors (so the caller's retry wrapper can retry a
+ * 429) — only fails open (assumes full body) when the call succeeds but
+ * returns text that doesn't clearly parse to YES/NO.
  */
-async function detectFullBody(_replicateUnused, imageInput) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      'ANTHROPIC_API_KEY is not set — required for the face-only-selfie detection step. Get one at https://console.anthropic.com/settings/keys'
-    );
-  }
-
-  const imageBlock = imageInput.startsWith('data:')
-    ? (() => {
-        const match = imageInput.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
-        if (!match) throw new Error('Could not parse data URI for vision check');
-        return { type: 'base64', media_type: match[1], data: match[2] };
-      })()
-    : { type: 'url', url: imageInput };
-
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
+async function detectFullBody(replicate, imageInput) {
+  const output = await replicate.run('lucataco/moondream2', {
+    input: {
+      image: imageInput,
+      prompt: QUESTION,
     },
-    body: JSON.stringify({
-      model: CLAUDE_MODEL,
-      max_tokens: 20,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'image', source: imageBlock },
-            {
-              type: 'text',
-              text:
-                'Does this photo clearly show the person\'s shoulders and upper torso (not just a close-up face/headshot)? ' +
-                'Reply with exactly one word: YES or NO.',
-            },
-          ],
-        },
-      ],
-    }),
   });
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Claude vision check failed (${res.status}): ${text}`);
-  }
-
-  const data = await res.json();
-  const answer = (data.content?.[0]?.text || '').trim().toUpperCase();
+  // Output is documented as "a list of text strings" — join defensively in
+  // case it comes back as an array of chunks vs. a single string.
+  const text = Array.isArray(output) ? output.join('') : String(output);
+  const answer = text.trim().toUpperCase();
 
   if (answer.startsWith('YES')) {
-    return { fullBodyDetected: true, reason: 'Claude vision check: shoulders/torso visible' };
+    return { fullBodyDetected: true, reason: 'moondream2: shoulders/torso visible' };
   }
   if (answer.startsWith('NO')) {
-    return { fullBodyDetected: false, reason: 'Claude vision check: face-only crop, no torso visible' };
+    return { fullBodyDetected: false, reason: 'moondream2: face-only crop, no torso visible' };
   }
 
   // Unparseable answer — fail open rather than blocking the request.
-  return { fullBodyDetected: true, reason: `Unparseable vision check response ("${answer}"), assuming full body` };
+  return {
+    fullBodyDetected: true,
+    reason: `Unparseable vision check response ("${answer.slice(0, 60)}"), assuming full body`,
+  };
 }
 
 module.exports = { detectFullBody };
