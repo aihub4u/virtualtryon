@@ -3,237 +3,548 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Fitting Room — Virtual Try-On</title>
+<title>SYNTH/FIT — Virtual Fitting Room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400..700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
-    --paper: #EDEAE2;
-    --ink: #17181C;
-    --ink-soft: #55565C;
-    --line: #C9C5B9;
-    --panel: #F7F5EF;
-    --cobalt: #2C3E8C;
-    --cobalt-dark: #1F2C66;
-    --tag-red: #A5333F;
+    --bg: #07080c;
+    --bg-2: #0c0e15;
+    --panel: rgba(255,255,255,0.035);
+    --panel-solid: #0f1119;
+    --border: rgba(255,255,255,0.09);
+    --border-bright: rgba(255,255,255,0.22);
+    --ink: #f2f4fa;
+    --ink-soft: #868ca0;
+    --ink-faint: #4d5266;
+    --cyan: #5feadb;
+    --violet: #a78bfa;
+    --magenta: #f472b6;
+    --spectrum: linear-gradient(100deg, var(--cyan), var(--violet), var(--magenta));
+    --danger: #f4707c;
+    --radius: 10px;
   }
   * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
   body {
     margin: 0;
-    background: var(--paper);
+    background: var(--bg);
     color: var(--ink);
-    font-family: 'Helvetica Neue', Arial, sans-serif;
+    font-family: 'Inter', -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+    position: relative;
+    overflow-x: hidden;
   }
-  .display {
-    font-family: Georgia, 'Times New Roman', serif;
+  .display { font-family: 'Space Grotesk', sans-serif; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+
+  /* ambient background: faint grid + drifting glow */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.028) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.028) 1px, transparent 1px);
+    background-size: 42px 42px;
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 100%);
+    pointer-events: none;
+    z-index: 0;
   }
+  .glow {
+    position: fixed;
+    width: 640px;
+    height: 640px;
+    top: -280px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: radial-gradient(circle, rgba(95,234,219,0.10) 0%, rgba(167,139,250,0.07) 45%, transparent 70%);
+    filter: blur(10px);
+    pointer-events: none;
+    z-index: 0;
+    animation: drift 14s ease-in-out infinite alternate;
+  }
+  @keyframes drift {
+    from { transform: translateX(-54%) translateY(0); }
+    to   { transform: translateX(-46%) translateY(30px); }
+  }
+
+  header, main, footer { position: relative; z-index: 1; }
+
   header {
-    padding: 2.5rem 1.5rem 1.5rem;
-    border-bottom: 1px solid var(--line);
+    padding: 3.2rem 1.5rem 2rem;
+    max-width: 760px;
+    margin: 0 auto;
   }
-  header .eyebrow {
-    font-size: 0.72rem;
-    letter-spacing: 0.18em;
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
-    color: var(--tag-red);
-    font-weight: 600;
+    color: var(--cyan);
+    padding: 0.3rem 0.7rem;
+    border: 1px solid rgba(95,234,219,0.3);
+    border-radius: 999px;
+    background: rgba(95,234,219,0.06);
   }
+  .eyebrow .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--cyan);
+    box-shadow: 0 0 8px var(--cyan);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+
   header h1 {
-    font-size: 2rem;
-    margin: 0.4rem 0 0.3rem;
-    font-weight: 400;
-    letter-spacing: -0.01em;
+    font-size: clamp(2rem, 5vw, 2.9rem);
+    line-height: 1.08;
+    margin: 1rem 0 0.7rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  header h1 .accent {
+    background: var(--spectrum);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
   }
   header p {
     margin: 0;
     color: var(--ink-soft);
-    font-size: 0.95rem;
-    max-width: 40ch;
-  }
-  main {
-    max-width: 720px;
-    margin: 0 auto;
-    padding: 1.5rem;
-  }
-  .step {
-    display: flex;
-    gap: 1rem;
-    align-items: flex-start;
-    padding: 1.5rem 0;
-    border-bottom: 1px solid var(--line);
-  }
-  .step-num {
-    font-family: Georgia, serif;
-    font-size: 0.8rem;
-    color: var(--ink-soft);
-    letter-spacing: 0.05em;
-    padding-top: 0.2rem;
-    min-width: 2.2rem;
-  }
-  .step-body { flex: 1; }
-  .step-body h2 {
     font-size: 1rem;
+    max-width: 46ch;
+    line-height: 1.6;
+  }
+
+  main {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 0.5rem 1.5rem 2rem;
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    backdrop-filter: blur(20px);
+    padding: 1.4rem;
+    margin-bottom: 1.1rem;
+  }
+  .panel-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 0.9rem;
+  }
+  .panel-head h2 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.95rem;
     font-weight: 600;
-    margin: 0 0 0.6rem;
+    margin: 0;
+    letter-spacing: -0.01em;
   }
-  .dropzone {
-    border: 1px dashed var(--line);
-    background: var(--panel);
-    border-radius: 2px;
+  .panel-head .tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+  }
+
+  .upload-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+  @media (max-width: 640px) {
+    .upload-grid { grid-template-columns: 1fr; }
+  }
+
+  /* scan-target dropzone: corner-bracket reticle motif */
+  .scanzone {
+    position: relative;
+    aspect-ratio: 3 / 4;
+    border-radius: 8px;
+    background: var(--panel-solid);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
     padding: 1rem;
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    cursor: pointer;
-    transition: border-color 0.15s ease;
+    transition: border-color 0.2s ease, background 0.2s ease;
   }
-  .dropzone:hover { border-color: var(--cobalt); }
-  .dropzone.has-image { border-style: solid; }
-  .dropzone input { display: none; }
-  .thumb {
-    width: 64px;
-    height: 64px;
-    border-radius: 2px;
-    object-fit: cover;
-    background: var(--line);
-    flex-shrink: 0;
-    display: none;
+  .scanzone:hover { border-color: var(--border-bright); }
+  .scanzone input { display: none; }
+
+  .scanzone .bracket {
+    position: absolute;
+    width: 18px; height: 18px;
+    border: 2px solid var(--ink-faint);
+    transition: border-color 0.2s ease;
+    z-index: 3;
   }
-  .thumb.show { display: block; }
+  .scanzone:hover .bracket,
+  .scanzone.has-image .bracket { border-color: var(--cyan); }
+  .bracket.tl { top: 10px; left: 10px; border-right: none; border-bottom: none; border-radius: 4px 0 0 0; }
+  .bracket.tr { top: 10px; right: 10px; border-left: none; border-bottom: none; border-radius: 0 4px 0 0; }
+  .bracket.bl { bottom: 10px; left: 10px; border-right: none; border-top: none; border-radius: 0 0 0 4px; }
+  .bracket.br { bottom: 10px; right: 10px; border-left: none; border-top: none; border-radius: 0 0 4px 0; }
+
+  .scanzone .icon {
+    width: 34px; height: 34px;
+    margin-bottom: 0.7rem;
+    color: var(--ink-faint);
+  }
+  .scan-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 0.35rem;
+  }
   .dz-text {
-    font-size: 0.88rem;
-    color: var(--ink-soft);
-  }
-  .dz-text strong { color: var(--ink); }
-  textarea {
-    width: 100%;
-    border: 1px solid var(--line);
-    background: var(--panel);
-    border-radius: 2px;
-    padding: 0.7rem;
-    font-family: inherit;
-    font-size: 0.9rem;
-    resize: vertical;
-    min-height: 2.5rem;
-  }
-  .cta-row {
-    padding: 1.5rem 0;
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-  }
-  button.generate {
-    background: var(--cobalt);
-    color: #fff;
-    border: none;
-    padding: 0.85rem 1.6rem;
-    font-size: 0.9rem;
-    letter-spacing: 0.02em;
-    border-radius: 2px;
-    cursor: pointer;
-    transition: background 0.15s ease;
-  }
-  button.generate:hover:not(:disabled) { background: var(--cobalt-dark); }
-  button.generate:disabled {
-    background: var(--line);
-    cursor: not-allowed;
-  }
-  .status {
     font-size: 0.85rem;
     color: var(--ink-soft);
+    line-height: 1.4;
   }
-  .status.err { color: var(--tag-red); }
-  .result {
-    padding: 2rem 0;
-  }
-  .result-tag {
-    font-size: 0.72rem;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--tag-red);
-    font-weight: 600;
-    margin-bottom: 0.8rem;
-  }
-  .result img {
+  .dz-text strong { color: var(--ink); font-weight: 500; }
+
+  .scanzone .thumb {
+    position: absolute;
+    inset: 0;
     width: 100%;
-    border-radius: 2px;
-    display: block;
-    background: var(--panel);
+    height: 100%;
+    object-fit: cover;
+    display: none;
   }
+  .scanzone .thumb.show { display: block; }
+  .scanzone.has-image .icon,
+  .scanzone.has-image .scan-label,
+  .scanzone.has-image .dz-text { display: none; }
+  .scanzone .overlay-label {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    padding: 0.6rem 0.7rem;
+    background: linear-gradient(to top, rgba(0,0,0,0.75), transparent);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.08em;
+    color: var(--ink);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    z-index: 2;
+  }
+  .scanzone.has-image .overlay-label { opacity: 1; }
+
+  /* sweeping scan line, idle ambient on empty zones */
+  .scanzone::after {
+    content: '';
+    position: absolute;
+    left: 8%; right: 8%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+    opacity: 0;
+    top: 0;
+  }
+  .scanzone:not(.has-image):hover::after {
+    opacity: 0.6;
+    animation: sweep 1.6s ease-in-out infinite;
+  }
+  @keyframes sweep {
+    0% { top: 8%; opacity: 0; }
+    15% { opacity: 0.7; }
+    85% { opacity: 0.7; }
+    100% { top: 92%; opacity: 0; }
+  }
+
+  .check-row {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    margin-top: 0.9rem;
+    font-size: 0.82rem;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  .check-row input {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px; height: 16px;
+    border: 1px solid var(--border-bright);
+    border-radius: 4px;
+    background: var(--panel-solid);
+    cursor: pointer;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .check-row input:checked {
+    background: var(--cyan);
+    border-color: var(--cyan);
+  }
+  .check-row input:checked::after {
+    content: '';
+    position: absolute;
+    left: 4px; top: 1px;
+    width: 4px; height: 8px;
+    border: solid var(--bg);
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+
+  textarea {
+    width: 100%;
+    background: var(--panel-solid);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.75rem 0.85rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--ink);
+    resize: vertical;
+    min-height: 2.6rem;
+  }
+  textarea::placeholder { color: var(--ink-faint); }
+  textarea:focus { outline: none; border-color: var(--cyan); }
+
+  /* segmented mode selector */
+  .segmented {
+    display: inline-flex;
+    background: var(--panel-solid);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 3px;
+    gap: 3px;
+  }
+  .segmented label {
+    position: relative;
+    padding: 0.5rem 1rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: color 0.2s ease;
+  }
+  .segmented input { display: none; }
+  .segmented input:checked + span { color: var(--bg); }
+  .segmented label:has(input:checked) {
+    background: var(--cyan);
+    color: var(--bg);
+  }
+  .segmented label:has(input:checked) span { color: var(--bg); }
+
+  .cta-row {
+    display: flex;
+    align-items: center;
+    gap: 1.1rem;
+    padding: 0.4rem 0 1.6rem;
+    flex-wrap: wrap;
+  }
+  button.generate {
+    position: relative;
+    background: var(--ink);
+    color: var(--bg);
+    border: none;
+    padding: 0.9rem 1.8rem;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    isolation: isolate;
+  }
+  button.generate::before {
+    content: '';
+    position: absolute;
+    inset: -1.5px;
+    border-radius: 9px;
+    background: var(--spectrum);
+    z-index: -1;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+  button.generate:hover:not(:disabled) {
+    transform: translateY(-1px);
+  }
+  button.generate:hover:not(:disabled)::before { opacity: 1; }
+  button.generate:disabled {
+    background: var(--panel-solid);
+    color: var(--ink-faint);
+    cursor: not-allowed;
+  }
+
+  .status {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    color: var(--ink-soft);
+  }
+  .status.err { color: var(--danger); }
+
   .spinner {
-    width: 14px; height: 14px;
-    border: 2px solid var(--line);
-    border-top-color: var(--cobalt);
+    width: 13px; height: 13px;
+    border: 2px solid var(--border);
+    border-top-color: var(--cyan);
     border-radius: 50%;
     display: inline-block;
     animation: spin 0.7s linear infinite;
     vertical-align: -2px;
-    margin-right: 0.4rem;
+    margin-right: 0.45rem;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* result panel with scan-reveal */
+  .result {
+    display: none;
+  }
+  .result-tag {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--cyan);
+    margin-bottom: 0.9rem;
+  }
+  .result-tag .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--cyan);
+    box-shadow: 0 0 8px var(--cyan);
+  }
+  .result-frame {
+    position: relative;
+    border-radius: var(--radius);
+    overflow: hidden;
+    border: 1px solid var(--border-bright);
+    background: var(--panel-solid);
+  }
+  .result-frame img {
+    width: 100%;
+    display: block;
+  }
+  .result-frame .bracket { width: 22px; height: 22px; border-color: var(--cyan); z-index: 3; }
+  .reveal-line {
+    position: absolute;
+    left: 0; right: 0; top: 0;
+    height: 2px;
+    background: var(--spectrum);
+    box-shadow: 0 0 16px 2px var(--cyan);
+    animation: reveal 0.9s cubic-bezier(0.65,0,0.35,1) forwards;
+    z-index: 2;
+  }
+  @keyframes reveal {
+    from { top: 0; }
+    to { top: 100%; opacity: 0; }
+  }
+
+  .readout {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.4rem;
+    margin-top: 0.9rem;
+    padding-top: 0.9rem;
+    border-top: 1px solid var(--border);
+  }
+  .readout div { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; }
+  .readout .k { color: var(--ink-faint); letter-spacing: 0.08em; text-transform: uppercase; display: block; margin-bottom: 0.2rem; }
+  .readout .v { color: var(--ink); }
+  .readout .v.ok { color: var(--cyan); }
+
   footer {
     text-align: center;
-    padding: 2rem 1.5rem 3rem;
-    color: var(--ink-soft);
-    font-size: 0.78rem;
+    padding: 1.5rem 1.5rem 3rem;
+    color: var(--ink-faint);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.02em;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .glow, .eyebrow .dot, .scanzone::after, .reveal-line, .spinner {
+      animation: none !important;
+    }
+    .reveal-line { display: none; }
   }
 </style>
 </head>
 <body>
 
+<div class="glow"></div>
+
 <header>
-  <div class="eyebrow">Fitting Room</div>
-  <h1 class="display">See it on, before you buy it.</h1>
-  <p>Upload a selfie and a product photo. We'll generate a realistic image of you wearing it.</p>
+  <span class="eyebrow"><span class="dot"></span>AI Fitting Engine // Online</span>
+  <h1 class="display">See it on you<br><span class="accent">before you buy it.</span></h1>
+  <p>Upload a photo of yourself and the product. The engine renders a realistic composite of you wearing it — no fitting room required.</p>
 </header>
 
 <main>
-  <div class="step">
-    <div class="step-num display">01</div>
-    <div class="step-body">
-      <h2>Your photo</h2>
-      <label class="dropzone" id="dz-selfie">
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Upload sources</h2>
+      <span class="tag">Step 1 / 2</span>
+    </div>
+    <div class="upload-grid">
+      <label class="scanzone" id="dz-selfie">
         <input type="file" id="input-selfie" accept="image/*" />
+        <span class="bracket tl"></span><span class="bracket tr"></span><span class="bracket bl"></span><span class="bracket br"></span>
         <img class="thumb" id="thumb-selfie" />
-        <span class="dz-text" id="text-selfie"><strong>Upload a selfie</strong><br>Front-facing, good lighting, plain background works best</span>
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+        <span class="scan-label">Subject</span>
+        <span class="dz-text" id="text-selfie"><strong>Upload a selfie</strong><br>Front-facing, good lighting</span>
+        <span class="overlay-label" id="overlay-selfie"></span>
       </label>
-    </div>
-  </div>
 
-  <div class="step">
-    <div class="step-num display">02</div>
-    <div class="step-body">
-      <h2>The product</h2>
-      <label class="dropzone" id="dz-product">
+      <label class="scanzone" id="dz-product">
         <input type="file" id="input-product" accept="image/*" />
+        <span class="bracket tl"></span><span class="bracket tr"></span><span class="bracket bl"></span><span class="bracket br"></span>
         <img class="thumb" id="thumb-product" />
-        <span class="dz-text" id="text-product"><strong>Upload a product image</strong><br>Flat-lay, ghost mannequin, or on-model — all work</span>
-      </label>
-      <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.7rem; font-size:0.85rem; color:var(--ink-soft); cursor:pointer;">
-        <input type="checkbox" id="full-outfit" />
-        This photo shows a full outfit (e.g. suit, co-ord set) — apply both top and bottom
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6 8l1.5-3h9L18 8"/><path d="M4 8h16l-1.2 12H5.2L4 8z"/></svg>
+        <span class="scan-label">Garment</span>
+        <span class="dz-text" id="text-product"><strong>Upload the product</strong><br>Flat-lay or on-model</span>
+        <span class="overlay-label" id="overlay-product"></span>
       </label>
     </div>
+
+    <label class="check-row">
+      <input type="checkbox" id="full-outfit" />
+      This photo shows a full outfit (e.g. suit, co-ord set) — apply both top and bottom
+    </label>
   </div>
 
-  <div class="step">
-    <div class="step-num display">03</div>
-    <div class="step-body">
-      <h2>Description <span style="color:var(--ink-soft); font-weight:400;">(optional)</span></h2>
-      <textarea id="description" placeholder="e.g. navy cotton oversized hoodie"></textarea>
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Description</h2>
+      <span class="tag">Optional</span>
     </div>
+    <textarea id="description" placeholder="// e.g. navy cotton oversized hoodie"></textarea>
   </div>
 
-  <div class="step" style="border-bottom: none;">
-    <div class="step-num display">04</div>
-    <div class="step-body">
-      <h2>Quality</h2>
-      <label style="font-size: 0.88rem; color: var(--ink-soft);">
-        <input type="radio" name="mode" value="quality" checked /> Quality (best result, &lt;2s/garment)
-      </label>
-      <br>
-      <label style="font-size: 0.88rem; color: var(--ink-soft);">
-        <input type="radio" name="mode" value="turbo" /> Turbo (faster, lower fidelity)
-      </label>
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Render quality</h2>
+      <span class="tag">Step 2 / 2</span>
+    </div>
+    <div class="segmented">
+      <label><input type="radio" name="mode" value="quality" checked /><span>Quality</span></label>
+      <label><input type="radio" name="mode" value="turbo" /><span>Turbo</span></label>
     </div>
   </div>
 
@@ -242,13 +553,19 @@
     <span class="status" id="status"></span>
   </div>
 
-  <div class="result" id="result" style="display:none;">
-    <div class="result-tag">Result</div>
-    <img id="result-img" alt="Virtual try-on result" />
+  <div class="result" id="result">
+    <div class="result-tag"><span class="dot"></span>Render complete</div>
+    <div class="result-frame">
+      <span class="bracket tl"></span><span class="bracket tr"></span><span class="bracket bl"></span><span class="bracket br"></span>
+      <div class="reveal-line" id="reveal-line"></div>
+      <img id="result-img" alt="Virtual try-on result" />
+    </div>
+    <div class="readout" id="readout"></div>
   </div>
+
 </main>
 
-<footer>Images are sent directly to the try-on model for generation and are not stored by this app.</footer>
+<footer>IMAGES ARE PROCESSED FOR GENERATION AND ARE NOT STORED BY THIS APP</footer>
 
 <script>
   const state = { selfie: null, product: null };
@@ -273,7 +590,8 @@
       thumb.src = URL.createObjectURL(file);
       thumb.classList.add('show');
       dz.classList.add('has-image');
-      text.innerHTML = `<strong>${file.name}</strong><br>Click to change`;
+      const overlay = document.getElementById('overlay-' + key);
+      if (overlay) overlay.textContent = file.name.length > 28 ? file.name.slice(0, 25) + '…' : file.name;
     });
   }
 
@@ -294,7 +612,7 @@
     statusEl.classList.remove('err');
     btn.disabled = true;
     resultEl.style.display = 'none';
-    statusEl.innerHTML = '<span class="spinner"></span>Generating — this can take 10-60 seconds…';
+    statusEl.innerHTML = '<span class="spinner"></span>Rendering composite — 10 to 60s…';
 
     const form = new FormData();
     form.append('selfie', state.selfie);
@@ -328,6 +646,32 @@
 
       resultImg.src = data.imageUrl;
       resultEl.style.display = 'block';
+
+      // Restart the scan-reveal sweep animation (CSS animations don't replay
+      // on their own when the element was already in the DOM).
+      const revealLine = document.getElementById('reveal-line');
+      revealLine.style.animation = 'none';
+      void revealLine.offsetWidth; // force reflow
+      revealLine.style.animation = '';
+
+      // HUD-style readout of what actually happened, from the response fields
+      // that already exist server-side (upscaled, bodyDetection, finalSizeBytes).
+      const readout = document.getElementById('readout');
+      const rows = [];
+      rows.push(['Mode', mode.toUpperCase()]);
+      if (data.upscaled !== null && data.upscaled !== undefined) {
+        rows.push(['Upscaled', data.upscaled ? 'YES · 8MP' : 'NO']);
+      }
+      if (data.finalSizeBytes) {
+        rows.push(['Size', (data.finalSizeBytes / 1024 / 1024).toFixed(2) + ' MB']);
+      }
+      if (data.bodyDetection) {
+        rows.push(['Scan', data.bodyDetection.fullBodyDetected ? 'FULL BODY' : 'FACE ONLY']);
+      }
+      readout.innerHTML = rows.map(([k, v]) =>
+        `<div><span class="k">${k}</span><span class="v ok">${v}</span></div>`
+      ).join('');
+
       statusEl.textContent = data.upscaleWarning ? `Done — note: ${data.upscaleWarning}` : 'Done.';
       if (data.upscaleWarning) statusEl.classList.add('err');
     } catch (err) {
