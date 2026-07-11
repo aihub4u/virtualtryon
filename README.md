@@ -54,26 +54,30 @@ Same pattern as your other Node services:
 
 If you want a custom domain like `tryon.karixforge.in`, add it the same way you did for `track.karixforge.in`.
 
-## Face-only selfie fallback
+## Face-only selfie check
 
-If someone uploads a headshot instead of a photo showing their torso, a direct try-on doesn't work well — there's no body to fit the garment onto. Instead of a broken result, the pipeline can detect this and reroute:
+If someone uploads a headshot instead of a photo showing their torso, a direct try-on doesn't work well — there's no body to fit the garment onto. Rather than generate a broken result (and pay for it), the pipeline checks first and stops with a clear error if the photo won't work:
 
-1. **Detect body coverage** — `lib/poseDetection.js` asks Claude directly (vision API call) whether the selfie shows shoulders/torso or is a face-only crop. (This originally tried to use a Replicate pose-estimation model, but the model slug I guessed at turned out not to exist — confirmed via a live 404. Rather than guess again, this now uses Claude's vision API directly, which has a schema I can verify exactly rather than reconstruct from documentation.)
-2. **If face-only** — instead of using the user's selfie directly, it runs the normal try-on with a **stock body photo** as the "person," then face-swaps the user's real face onto that result via `easel/advanced-face-swap` (`providers/faceSwap.js`).
-3. **If full body** — normal direct flow, no extra steps or cost.
+1. **Detect body coverage** — `lib/poseDetection.js` asks `lucataco/moondream2` (a vision-language model on Replicate) a direct yes/no question about whether the selfie shows shoulders/torso.
+   - This went through two earlier attempts that didn't pan out: `ultralytics/yolo26-pose` doesn't actually exist (confirmed via a live 404), and Ultralytics hasn't deployed any pose-estimation endpoint to Replicate under their own org — only detection/classification. moondream2's schema is corroborated across multiple independent sources, not a single guessed page, and it's Apache-2.0 licensed (commercial-safe).
+2. **If face-only** — the request stops immediately with a `422` and a clear error message. No try-on generation runs, no cost incurred beyond the one cheap detection call (~$0.0015).
+3. **If full body** — normal flow proceeds as usual.
 
-The API response now includes `fallbackUsed`, `fallbackReason`, and `bodyDetection` (`{ fullBodyDetected, reason }`) so you can tell exactly which path a given request took and why, without needing to check Render logs.
+Response shape on rejection:
+```json
+{
+  "error": "Full body not detected in the uploaded photo. Please upload a photo that shows your shoulders and torso, not just a close-up face.",
+  "bodyDetection": { "fullBodyDetected": false, "reason": "moondream2: face-only crop, no torso visible" }
+}
+```
 
-### Before this actually works, you must:
+On success, the response includes `bodyDetection` too, so you can confirm the check ran and passed.
 
-1. **Add real stock photos.** Edit `server/config/stockModels.json` and replace the placeholder URLs with your own licensed, front-facing, neutral-pose stock photos. The fallback throws a clear error until you do this — it won't silently use a broken placeholder.
-2. **Set `ANTHROPIC_API_KEY`.** Separate from `REPLICATE_API_TOKEN` — get one at https://console.anthropic.com/settings/keys. This is a small extra cost per request (one vision call to Claude) but a much more reliable check than the model-guessing approach.
-3. **Verify one remaining unconfirmed schema.** `easel/advanced-face-swap`'s fields (`swap_image`, `target_image`, `hair_source`) come from Replicate's own published usage example, so more trustworthy than the pose-detection guess was — but still worth a quick check against https://replicate.com/easel/advanced-face-swap/api if you hit a 422.
-4. **Check both models' licenses** for commercial use before real campaign traffic, same as every other model in this stack.
+**Fails open by design:** if the moondream2 check itself errors after retries, it defaults to "full body" and proceeds with generation rather than blocking the request — so a bug or outage in the detection step degrades to the old (no-check) behavior, not a hard failure that blocks every request.
 
-**Fails open by design:** if the Claude vision check itself errors after retries, it defaults to "full body" and proceeds with the normal direct try-on rather than blocking the request — so a bug or outage in the detection step degrades to the old behavior, not a hard failure.
+Set `ENABLE_BODY_CHECK=false` to skip this entirely and always attempt generation regardless of framing.
 
-**Cost note:** the fallback path is now try-on-on-stock-body + face-swap + upscale (plus one Claude vision call for detection on every request, fallback or not) — roughly 2-3x the cost of a direct try-on when the fallback triggers, plus a small flat cost per request for the detection check itself. Set `ENABLE_FACE_SWAP_FALLBACK=false` to disable detection and the fallback entirely if you'd rather have face-only selfies just produce a (likely poor) direct result than pay for any of this.
+*(An earlier version of this feature attempted a more elaborate fallback — running the garment on a stock body photo and face-swapping the user's real face on — instead of rejecting. That added real complexity (stock photo licensing, an extra unconfirmed model schema, 2-3x the cost) for a use case that's simpler to just reject and ask the user to re-upload. `providers/faceSwap.js` and `lib/stockModel.js` are still in the repo if you want to revisit that approach later, but nothing currently calls them.)*
 
 The original `/api/tryon` (upload two files, wait for the result) works fine for casual use, but doesn't scale to a campaign: it holds an HTTP connection open for 5-15+ seconds per user (two chained Replicate calls), and Replicate deletes its output files after **1 hour** — so anyone who checks their result later than that gets a dead link.
 

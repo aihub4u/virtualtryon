@@ -89,11 +89,15 @@ router.post(
         provider,
         upscaled: result.upscaled ?? null,
         upscaleWarning: result.upscaleWarning ?? null,
-        fallbackUsed: result.fallbackUsed ?? null,
-        fallbackReason: result.fallbackReason ?? null,
         bodyDetection: result.bodyDetection ?? null,
       });
     } catch (err) {
+      if (err.code === 'FULL_BODY_NOT_DETECTED') {
+        return res.status(422).json({
+          error: err.message,
+          bodyDetection: err.bodyDetection ?? null,
+        });
+      }
       console.error('Try-on generation failed:', err);
       res.status(500).json({ error: err.message || 'Try-on generation failed' });
     }

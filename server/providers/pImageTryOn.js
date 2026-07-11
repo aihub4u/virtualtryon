@@ -16,28 +16,23 @@
 // result through prunaai/p-image-upscale as a final polish pass. That's what
 // happens below (toggle with UPSCALE_TRYON_RESULT=false to skip it).
 //
-// FACE-ONLY FALLBACK: if the uploaded selfie doesn't show enough of the body
-// (a headshot rather than a torso+ shot), fitting a garment directly onto it
-// doesn't work well. In that case this pipeline instead: (1) runs the normal
-// try-on using a configured stock body photo as the "person", then (2) face-
-// swaps the user's real face onto that result via easel/advanced-face-swap.
-// See lib/poseDetection.js and lib/stockModel.js — and their header comments
-// on which parts are confirmed vs. best-effort schema guesses.
+// BODY-COVERAGE CHECK: before spending anything on generation, this asks
+// lucataco/moondream2 (a vision-language model on Replicate) whether the
+// selfie shows shoulders/torso. If not, it stops immediately with a clear
+// error instead of running (and billing for) a try-on that would look
+// broken anyway. See lib/poseDetection.js for how that check works and what
+// it went through to get here (two earlier, unconfirmed model guesses that
+// didn't pan out).
 //
-// RETRY: every Replicate call in this file goes through withRetry() now, not
-// just the upscale step. Replicate has a base burst limit (~1 request/sec)
-// independent of credit balance and payment method — the face-swap fallback
-// path fires 3 back-to-back calls (pose detect, stock-body try-on, face
-// swap), and only the upscale step had retry protection until now, which
-// could trip that burst limit even on a fully funded account.
+// RETRY: every Replicate call in this file goes through withRetry() for 429s
+// — Replicate has a base burst limit (~1 request/sec) independent of credit
+// balance and payment method.
 //
 // Also confirm the "License" tab on the p-image-try-on model page states
 // commercial use is permitted before sending real customer traffic through it.
 
 const Replicate = require('replicate');
 const { detectFullBody } = require('../lib/poseDetection');
-const { getStockModelUrl } = require('../lib/stockModel');
-const { swapFace } = require('./faceSwap');
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -94,51 +89,40 @@ async function runUpscale(replicate, imageUrl) {
   );
 }
 
-async function runTryOn({ modelImage, garmentImage, turbo, category }) {
+async function runTryOn({ modelImage, garmentImage, turbo }) {
   const apiToken = process.env.REPLICATE_API_TOKEN;
   if (!apiToken) throw new Error('REPLICATE_API_TOKEN is not set');
 
   const replicate = new Replicate({ auth: apiToken });
 
-  let fallbackUsed = false;
-  let fallbackReason = null;
-  let tryOnResultUrl;
   let bodyDetection = null;
+  const checkEnabled = process.env.ENABLE_BODY_CHECK !== 'false';
 
-  const fallbackEnabled = process.env.ENABLE_FACE_SWAP_FALLBACK !== 'false';
-
-  if (fallbackEnabled) {
+  if (checkEnabled) {
     let detection;
     try {
-      detection = await withRetry('pose-detection', () => detectFullBody(replicate, modelImage));
+      detection = await withRetry('body-check', () => detectFullBody(replicate, modelImage));
     } catch (err) {
       // Detection genuinely failed after retries — fail open rather than
       // blocking the whole request on a detection-step bug.
-      console.error('Pose detection failed after retries, assuming full body:', err.message);
+      console.error('Body-coverage check failed after retries, assuming full body:', err.message);
       detection = { fullBodyDetected: true, reason: `Detection error (${err.message}), failed open` };
     }
 
     bodyDetection = { fullBodyDetected: detection.fullBodyDetected, reason: detection.reason };
 
     if (!detection.fullBodyDetected) {
-      fallbackUsed = true;
-      fallbackReason = detection.reason;
-      console.log(`Face-only selfie detected (${detection.reason}) — using stock body + face swap fallback`);
-
-      const stockPhotoUrl = getStockModelUrl(category);
-      const tryOnOnStockBody = await runPImageTryOn(replicate, stockPhotoUrl, garmentImage, turbo);
-      tryOnResultUrl = await withRetry('face-swap', () =>
-        swapFace(replicate, { userFaceImage: modelImage, targetImage: tryOnOnStockBody })
+      const err = new Error(
+        'Full body not detected in the uploaded photo. Please upload a photo that shows your shoulders and torso, not just a close-up face.'
       );
+      err.code = 'FULL_BODY_NOT_DETECTED';
+      err.bodyDetection = bodyDetection;
+      throw err;
     }
   }
 
-  if (!tryOnResultUrl) {
-    // Normal path: full body was detected, or fallback is disabled.
-    tryOnResultUrl = await runPImageTryOn(replicate, modelImage, garmentImage, turbo);
-  }
-
-  let imageUrl = tryOnResultUrl;
+  // Body check passed (or is disabled) — proceed with generation.
+  let imageUrl = await runPImageTryOn(replicate, modelImage, garmentImage, turbo);
   let upscaled = false;
   let upscaleWarning = null;
 
@@ -161,7 +145,7 @@ async function runTryOn({ modelImage, garmentImage, turbo, category }) {
     }
   }
 
-  return { imageUrl, upscaled, upscaleWarning, fallbackUsed, fallbackReason, bodyDetection };
+  return { imageUrl, upscaled, upscaleWarning, bodyDetection };
 }
 
 module.exports = { runTryOn };
