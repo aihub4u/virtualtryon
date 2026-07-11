@@ -79,6 +79,16 @@ Set `ENABLE_BODY_CHECK=false` to skip this entirely and always attempt generatio
 
 *(An earlier version of this feature attempted a more elaborate fallback — running the garment on a stock body photo and face-swapping the user's real face on — instead of rejecting. That added real complexity (stock photo licensing, an extra unconfirmed model schema, 2-3x the cost) for a use case that's simpler to just reject and ask the user to re-upload. `providers/faceSwap.js` and `lib/stockModel.js` are still in the repo if you want to revisit that approach later, but nothing currently calls them.)*
 
+## Full outfit garment photos (suits, co-ord sets)
+
+A single garment photo typically gets auto-categorized as **one** clothing type by try-on models — usually whichever piece is visually dominant. A photo of a full suit, for example, often only gets applied as a jacket, leaving the person's original pants untouched. This isn't specific to `p-image-try-on` — it's a consistent pattern across virtual try-on APIs generally, since most process one garment category per image.
+
+The fix: when the person uploading knows the product photo shows a full outfit, checking **"This photo shows a full outfit"** in the UI splits the same image into a top-half and bottom-half crop (`lib/garmentSplit.js`, via `sharp`) and sends both as separate entries in `garment_images`, rather than the one full-frame photo. This matches how virtual try-on APIs generally recommend handling full outfits — one image per garment category, even if both categories originate from the same source photo.
+
+This is opt-in, not automatic — forcing the split on every product photo would break normal single-item photos (a plain t-shirt shot doesn't have a meaningful "bottom half" to extract). Toggle it per-request based on what the actual product photo shows.
+
+**Cost note:** garment_images accepts multiple images per call at (per Pruna's pricing) $0.015 for the first + $0.008 for each additional — so a full-outfit request costs $0.023 instead of $0.015 for the base try-on step, before upscale/detection.
+
 The original `/api/tryon` (upload two files, wait for the result) works fine for casual use, but doesn't scale to a campaign: it holds an HTTP connection open for 5-15+ seconds per user (two chained Replicate calls), and Replicate deletes its output files after **1 hour** — so anyone who checks their result later than that gets a dead link.
 
 For anything sent to a real campaign audience, use **`POST /api/jobs`** + **`GET /api/jobs/:id`** instead:

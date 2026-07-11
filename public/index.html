@@ -208,6 +208,10 @@
         <img class="thumb" id="thumb-product" />
         <span class="dz-text" id="text-product"><strong>Upload a product image</strong><br>Flat-lay, ghost mannequin, or on-model — all work</span>
       </label>
+      <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.7rem; font-size:0.85rem; color:var(--ink-soft); cursor:pointer;">
+        <input type="checkbox" id="full-outfit" />
+        This photo shows a full outfit (e.g. suit, co-ord set) — apply both top and bottom
+      </label>
     </div>
   </div>
 
@@ -299,6 +303,7 @@
     if (desc) form.append('description', desc);
     const mode = document.querySelector('input[name="mode"]:checked').value;
     form.append('turbo', mode === 'turbo' ? 'true' : 'false');
+    form.append('fullOutfit', document.getElementById('full-outfit').checked ? 'true' : 'false');
 
     try {
       const res = await fetch('/api/tryon', { method: 'POST', body: form });

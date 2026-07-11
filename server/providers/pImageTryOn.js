@@ -33,6 +33,8 @@
 
 const Replicate = require('replicate');
 const { detectFullBody } = require('../lib/poseDetection');
+const { enforceMaxSize } = require('../lib/imageSizeLimit');
+const { splitGarmentTopBottom } = require('../lib/garmentSplit');
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -60,12 +62,12 @@ async function withRetry(label, fn, attempts = 3) {
   }
 }
 
-async function runPImageTryOn(replicate, personImage, garmentImage, turbo) {
+async function runPImageTryOn(replicate, personImage, garmentImages, turbo) {
   const output = await withRetry('p-image-try-on', () =>
     replicate.run('prunaai/p-image-try-on', {
       input: {
         person_image: personImage,
-        garment_images: [garmentImage], // supports up to 11 — extend this array for multi-garment try-on
+        garment_images: garmentImages, // array — 1 image for a single item, 2 (top+bottom crop) for a full outfit
         turbo: !!turbo,
       },
     })
@@ -89,7 +91,7 @@ async function runUpscale(replicate, imageUrl) {
   );
 }
 
-async function runTryOn({ modelImage, garmentImage, turbo }) {
+async function runTryOn({ modelImage, garmentImage, turbo, fullOutfit }) {
   const apiToken = process.env.REPLICATE_API_TOKEN;
   if (!apiToken) throw new Error('REPLICATE_API_TOKEN is not set');
 
@@ -122,7 +124,18 @@ async function runTryOn({ modelImage, garmentImage, turbo }) {
   }
 
   // Body check passed (or is disabled) — proceed with generation.
-  let imageUrl = await runPImageTryOn(replicate, modelImage, garmentImage, turbo);
+  let garmentImages = [garmentImage];
+  if (fullOutfit) {
+    try {
+      const { topDataUri, bottomDataUri } = await splitGarmentTopBottom(garmentImage);
+      garmentImages = [topDataUri, bottomDataUri];
+      console.log('Full-outfit mode: split garment photo into top/bottom crops');
+    } catch (err) {
+      console.error('Garment split failed, falling back to single full-frame garment image:', err.message);
+    }
+  }
+
+  let imageUrl = await runPImageTryOn(replicate, modelImage, garmentImages, turbo);
   let upscaled = false;
   let upscaleWarning = null;
 
@@ -145,7 +158,22 @@ async function runTryOn({ modelImage, garmentImage, turbo }) {
     }
   }
 
-  return { imageUrl, upscaled, upscaleWarning, bodyDetection };
+  // Guarantee the final delivered file is under budget, regardless of how
+  // detailed/complex the content is (quality settings alone can't promise
+  // this — see lib/imageSizeLimit.js). Returned as a data URI rather than
+  // the Replicate URL so the size guarantee actually reaches the client,
+  // not just whatever Replicate happens to be hosting.
+  let sizeEnforcedUrl = imageUrl;
+  let finalSizeBytes = null;
+  try {
+    const { buffer, contentType, bytes } = await enforceMaxSize(imageUrl);
+    sizeEnforcedUrl = `data:${contentType};base64,${buffer.toString('base64')}`;
+    finalSizeBytes = bytes;
+  } catch (err) {
+    console.error('Size enforcement failed, returning original (unverified size) URL:', err.message);
+  }
+
+  return { imageUrl: sizeEnforcedUrl, upscaled, upscaleWarning, bodyDetection, finalSizeBytes };
 }
 
 module.exports = { runTryOn };
