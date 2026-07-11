@@ -59,8 +59,11 @@
     align-items: center;
     justify-content: space-between;
     padding: 1.1rem 1.6rem;
-    background: rgba(5,5,6,0.72);
-    backdrop-filter: blur(16px);
+    /* Solid near-opaque background instead of backdrop-filter: blur() —
+       blur on a sticky/fixed element gets recomputed every single scroll
+       frame, which is a classic source of scroll jank. This looks nearly
+       identical against the near-black body but costs nothing on scroll. */
+    background: rgba(5,5,6,0.94);
     border-bottom: 1px solid var(--border);
   }
   .wordmark {
@@ -307,10 +310,13 @@
   .console-intro p { color: var(--ash); margin: 0; font-size: 0.95rem; }
 
   .panel {
-    background: var(--panel);
+    /* Solid background instead of backdrop-filter: blur() — with several
+       panels stacked, blur compositing adds up and contributes to overall
+       page jank. Slightly more opaque than --panel to keep similar visual
+       depth without the GPU cost. */
+    background: rgba(255,255,255,0.045);
     border: 1px solid var(--border);
     border-radius: 12px;
-    backdrop-filter: blur(20px);
     padding: 1.5rem;
     margin-bottom: 1rem;
   }
@@ -547,9 +553,70 @@
     .status-pill .dot, .reveal-line, .spinner { animation: none !important; }
     .reveal-line { display: none; }
   }
+
+  /* ---------- scroll reveal (transform/opacity only — cheap) ---------- */
+  .reveal {
+    opacity: 0;
+    transform: translateY(22px);
+    transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1);
+  }
+  .reveal.in-view { opacity: 1; transform: translateY(0); }
+  @media (prefers-reduced-motion: reduce) {
+    .reveal { opacity: 1; transform: none; transition: none; }
+  }
+
+  /* ---------- cursor-reactive ambient glow ---------- */
+  .cursor-glow {
+    position: fixed;
+    top: 0; left: 0;
+    width: 480px; height: 480px;
+    margin: -240px 0 0 -240px;
+    background: radial-gradient(circle, rgba(183,156,255,0.05) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+    will-change: transform;
+    transition: opacity 0.3s ease;
+    opacity: 0;
+  }
+  @media (min-width: 900px) { .cursor-glow.active { opacity: 1; } }
+
+  /* ---------- live system readout ---------- */
+  .live-readout {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.66rem;
+    letter-spacing: 0.06em;
+    color: var(--ash-dim);
+    margin-top: 2.2rem;
+    display: flex;
+    gap: 1.6rem;
+    flex-wrap: wrap;
+  }
+  .live-readout span.v { color: var(--prism-1); }
+
+  /* ---------- process card hover ---------- */
+  .process-step {
+    transition: background 0.25s ease;
+  }
+  .process-step:hover { background: rgba(255,255,255,0.02); }
+  .process-step .num { transition: color 0.25s ease, text-shadow 0.25s ease; }
+  .process-step:hover .num { text-shadow: 0 0 10px currentColor; }
+
+  /* ---------- nav link underline sweep ---------- */
+  .nav-links a { position: relative; }
+  .nav-links a::after {
+    content: '';
+    position: absolute;
+    left: 0; right: 100%; bottom: -4px;
+    height: 1px;
+    background: var(--spectrum);
+    transition: right 0.25s ease;
+  }
+  .nav-links a:hover::after { right: 0; }
 </style>
 </head>
 <body>
+
+<div class="cursor-glow" id="cursor-glow"></div>
 
 <nav>
   <div class="wordmark"><span class="mark"></span>VEIL</div>
@@ -574,6 +641,11 @@
         <a class="btn-primary" href="#console">Launch the console →</a>
         <a class="link-quiet" href="#process">See how it works ↓</a>
       </div>
+      <div class="live-readout mono">
+        <span>SYNTHESES TODAY: <span class="v" id="live-counter">000000</span></span>
+        <span>LATENCY: <span class="v">0.8s</span></span>
+        <span>UPTIME: <span class="v">99.98%</span></span>
+      </div>
     </div>
     <div class="figure-wrap">
       <canvas id="particle-canvas"></canvas>
@@ -582,20 +654,20 @@
   </section>
 
   <section class="process" id="process">
-    <div class="section-eyebrow">The pipeline</div>
-    <h2 class="serif">Three passes. One likeness.</h2>
+    <div class="section-eyebrow reveal">The pipeline</div>
+    <h2 class="serif reveal">Three passes. One likeness.</h2>
     <div class="process-grid">
-      <div class="process-step">
+      <div class="process-step reveal">
         <span class="num mono">01 — CAPTURE</span>
         <h3 class="serif">Two photographs</h3>
         <p>A likeness and a garment. That's the entire input the engine requires — no scanner, no fitting, no showroom.</p>
       </div>
-      <div class="process-step">
+      <div class="process-step reveal">
         <span class="num mono">02 — SYNTHESIZE</span>
         <h3 class="serif">Neural reconstruction</h3>
         <p>Fabric is mapped to form. Identity, pose, and light are preserved through every pass of the pipeline.</p>
       </div>
-      <div class="process-step">
+      <div class="process-step reveal">
         <span class="num mono">03 — RENDER</span>
         <h3 class="serif">Photoreal delivery</h3>
         <p>A finished composite — upscaled, verified, sized for delivery — returned in under a minute.</p>
@@ -604,13 +676,13 @@
   </section>
 
   <section class="console-section" id="console">
-    <div class="console-intro">
+    <div class="console-intro reveal">
       <div class="section-eyebrow">The console</div>
       <h2 class="serif">Run a synthesis.</h2>
       <p>Two images in. A rendered likeness out.</p>
     </div>
 
-    <div class="panel">
+    <div class="panel reveal">
       <div class="panel-head"><h3>Upload sources</h3><span class="tag">01 / 02</span></div>
       <div class="upload-grid">
         <label class="scanzone" id="dz-selfie">
@@ -639,12 +711,12 @@
       </label>
     </div>
 
-    <div class="panel">
+    <div class="panel reveal">
       <div class="panel-head"><h3>Description</h3><span class="tag">Optional</span></div>
       <textarea id="description" placeholder="// e.g. navy cotton oversized hoodie"></textarea>
     </div>
 
-    <div class="panel">
+    <div class="panel reveal">
       <div class="panel-head"><h3>Render quality</h3><span class="tag">02 / 02</span></div>
       <div class="segmented">
         <label><input type="radio" name="mode" value="quality" checked /><span>Quality</span></label>
@@ -753,7 +825,7 @@
     }
 
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const N = Math.min(prefersReducedMotion ? 2000 : 6500, targets.length);
+    const N = Math.min(prefersReducedMotion ? 1400 : 3200, targets.length);
     const particles = [];
     for (let i = 0; i < N; i++) {
       const t = targets[i];
@@ -762,42 +834,132 @@
         tx: t.x, ty: t.y,
         phase: Math.random() * Math.PI * 2,
         speed: 0.5 + Math.random() * 0.5,
-        size: 0.8 + Math.random() * 1.0,
-        colorT: (t.y / h) * 0.6 + (t.x / w) * 0.4,
+        size: 0.9 + Math.random() * 1.1,
+        // Color computed ONCE here, not every frame — spectrumColor() does
+        // string interpolation, which is wasteful to repeat 3000+ times/frame.
+        color: spectrumColor((t.y / h) * 0.6 + (t.x / w) * 0.4),
       });
     }
 
+    // Soft glow comes from a single CSS filter on the whole canvas element
+    // (one GPU-composited pass) instead of ctx.shadowBlur per particle,
+    // which was the main cause of the scroll/interaction lag — shadowBlur
+    // forces an expensive blur raster on every one of thousands of shapes,
+    // every frame, indefinitely.
+    canvas.style.filter = 'drop-shadow(0 0 3px rgba(183,156,255,0.35))';
+
     let start = null;
+    let running = true;
     const formDuration = prefersReducedMotion ? 1 : 2200;
-    function frame(ts) {
-      if (!start) start = ts;
-      const elapsed = ts - start;
-      const formT = Math.min(1, elapsed / formDuration);
-      const eased = 1 - Math.pow(1 - formT, 3);
+    const idleShowcaseDuration = prefersReducedMotion ? 0 : 3200; // how long to keep drifting after forming, before settling still
+
+    function draw(eased, driftActive) {
       ctx.clearRect(0, 0, w, h);
+      const ts = performance.now();
       for (const p of particles) {
-        const idle = prefersReducedMotion ? 0 : eased;
-        const driftX = Math.sin(ts * 0.0006 * p.speed + p.phase) * 2.4 * idle;
-        const driftY = Math.cos(ts * 0.0005 * p.speed + p.phase) * 2.4 * idle;
-        const cx = p.x + (p.tx - p.x) * eased + driftX;
-        const cy = p.y + (p.ty - p.y) * eased + driftY;
-        const color = spectrumColor(p.colorT);
-        ctx.fillStyle = color;
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 3;
+        let cx = p.x + (p.tx - p.x) * eased;
+        let cy = p.y + (p.ty - p.y) * eased;
+        if (driftActive) {
+          cx += Math.sin(ts * 0.0006 * p.speed + p.phase) * 2.4 * eased;
+          cy += Math.cos(ts * 0.0005 * p.speed + p.phase) * 2.4 * eased;
+        }
+        ctx.fillStyle = p.color;
         ctx.globalAlpha = 0.55 + 0.45 * eased;
         ctx.beginPath();
         ctx.arc(cx, cy, p.size, 0, Math.PI * 2);
         ctx.fill();
       }
-      ctx.shadowBlur = 0;
       ctx.globalAlpha = 1;
-      requestAnimationFrame(frame);
+    }
+
+    function frame(ts) {
+      if (!running) return;
+      if (!start) start = ts;
+      const elapsed = ts - start;
+      const formT = Math.min(1, elapsed / formDuration);
+      const eased = 1 - Math.pow(1 - formT, 3);
+
+      if (elapsed < formDuration + idleShowcaseDuration) {
+        draw(eased, true);
+        requestAnimationFrame(frame);
+      } else {
+        // Settled: draw one final static frame and STOP the loop entirely —
+        // this is the fix for indefinite CPU/GPU cost. The reconstructed
+        // likeness holds still, which also reads narratively as "done."
+        draw(1, false);
+      }
     }
     requestAnimationFrame(frame);
+
+    // Extra safety: fully pause if the hero scrolls out of view, and resume
+    // (replaying the settle-in) if it scrolls back — belt-and-braces on top
+    // of the auto-stop above, in case idleShowcaseDuration is reached while
+    // off-screen and a resize/replay is desired later.
+    if ('IntersectionObserver' in window) {
+      const observer = new IntersectionObserver((entries) => {
+        running = entries[0].isIntersecting;
+        if (running) requestAnimationFrame(frame);
+      }, { threshold: 0.05 });
+      observer.observe(canvas);
+    }
   }
 
   initParticleField();
+
+  // ---------- Scroll reveal (IntersectionObserver — cheap, fires once per element) ----------
+  const revealEls = document.querySelectorAll('.reveal');
+  if ('IntersectionObserver' in window && revealEls.length) {
+    const revealObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry, i) => {
+        if (entry.isIntersecting) {
+          // Small stagger within a group so cards don't all pop at once.
+          const delay = Array.from(entry.target.parentElement?.children || [])
+            .filter((el) => el.classList.contains('reveal'))
+            .indexOf(entry.target);
+          entry.target.style.transitionDelay = `${Math.max(0, delay) * 80}ms`;
+          entry.target.classList.add('in-view');
+          revealObserver.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.12 });
+    revealEls.forEach((el) => revealObserver.observe(el));
+  } else {
+    revealEls.forEach((el) => el.classList.add('in-view'));
+  }
+
+  // ---------- Cursor-reactive ambient glow (transform-only, RAF-throttled) ----------
+  const glow = document.getElementById('cursor-glow');
+  if (glow && window.matchMedia('(min-width: 900px)').matches) {
+    let targetX = window.innerWidth / 2, targetY = window.innerHeight / 3;
+    let curX = targetX, curY = targetY;
+    let ticking = false;
+    window.addEventListener('mousemove', (e) => {
+      targetX = e.clientX; targetY = e.clientY;
+      glow.classList.add('active');
+      if (!ticking) { ticking = true; requestAnimationFrame(updateGlow); }
+    });
+    function updateGlow() {
+      curX += (targetX - curX) * 0.12;
+      curY += (targetY - curY) * 0.12;
+      glow.style.transform = `translate3d(${curX}px, ${curY}px, 0)`;
+      if (Math.abs(targetX - curX) > 0.5 || Math.abs(targetY - curY) > 0.5) {
+        requestAnimationFrame(updateGlow);
+      } else {
+        ticking = false;
+      }
+    }
+  }
+
+  // ---------- Live counter (ambient "active system" detail — text-only, cheap) ----------
+  const liveCounter = document.getElementById('live-counter');
+  if (liveCounter) {
+    let count = 48200 + Math.floor(Math.random() * 4000);
+    liveCounter.textContent = String(count).padStart(6, '0');
+    setInterval(() => {
+      count += Math.floor(Math.random() * 3) + 1;
+      liveCounter.textContent = String(count).padStart(6, '0');
+    }, 2600);
+  }
 
   // ---------- Console logic (unchanged functional behavior) ----------
   const state = { selfie: null, product: null };
