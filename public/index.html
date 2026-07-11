@@ -3,82 +3,146 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>SYNTH/FIT — Virtual Fitting Room</title>
+<title>VEIL — Synthesis Engine</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400..700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,450;9..144,600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #07080c;
-    --bg-2: #0c0e15;
+    --void: #050506;
     --panel: rgba(255,255,255,0.035);
-    --panel-solid: #0f1119;
-    --border: rgba(255,255,255,0.09);
+    --panel-solid: #0c0d10;
+    --border: rgba(255,255,255,0.08);
     --border-bright: rgba(255,255,255,0.22);
-    --ink: #f2f4fa;
-    --ink-soft: #868ca0;
-    --ink-faint: #4d5266;
-    --cyan: #5feadb;
-    --violet: #a78bfa;
-    --magenta: #f472b6;
-    --spectrum: linear-gradient(100deg, var(--cyan), var(--violet), var(--magenta));
+    --ivory: #F3F1ED;
+    --ash: #85818c;
+    --ash-dim: #4b4850;
+    --prism-1: #7DF9D8;
+    --prism-2: #B79CFF;
+    --prism-3: #FF9EC4;
+    --spectrum: linear-gradient(100deg, var(--prism-1), var(--prism-2), var(--prism-3));
     --danger: #f4707c;
-    --radius: 10px;
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
   body {
     margin: 0;
-    background: var(--bg);
-    color: var(--ink);
+    background: var(--void);
+    color: var(--ivory);
     font-family: 'Inter', -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
-    min-height: 100vh;
-    position: relative;
     overflow-x: hidden;
   }
-  .display { font-family: 'Space Grotesk', sans-serif; }
+  .serif { font-family: 'Fraunces', serif; }
   .mono { font-family: 'JetBrains Mono', monospace; }
+  a { color: inherit; }
 
-  /* ambient background: faint grid + drifting glow */
   body::before {
     content: '';
     position: fixed;
     inset: 0;
     background-image:
-      linear-gradient(rgba(255,255,255,0.028) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255,255,255,0.028) 1px, transparent 1px);
-    background-size: 42px 42px;
-    mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 100%);
+      linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.022) 1px, transparent 1px);
+    background-size: 46px 46px;
+    mask-image: radial-gradient(ellipse 70% 55% at 50% 8%, black 30%, transparent 100%);
     pointer-events: none;
     z-index: 0;
   }
-  .glow {
-    position: fixed;
-    width: 640px;
-    height: 640px;
-    top: -280px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: radial-gradient(circle, rgba(95,234,219,0.10) 0%, rgba(167,139,250,0.07) 45%, transparent 70%);
-    filter: blur(10px);
-    pointer-events: none;
-    z-index: 0;
-    animation: drift 14s ease-in-out infinite alternate;
-  }
-  @keyframes drift {
-    from { transform: translateX(-54%) translateY(0); }
-    to   { transform: translateX(-46%) translateY(30px); }
-  }
 
-  header, main, footer { position: relative; z-index: 1; }
+  /* ---------- NAV ---------- */
+  nav {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.1rem 1.6rem;
+    background: rgba(5,5,6,0.72);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+  }
+  .wordmark {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: 'Fraunces', serif;
+    font-size: 1.15rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+  .wordmark .mark {
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: var(--spectrum);
+    flex-shrink: 0;
+  }
+  .nav-links {
+    display: none;
+    align-items: center;
+    gap: 2rem;
+  }
+  @media (min-width: 640px) { .nav-links { display: flex; } }
+  .nav-links a {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--ash);
+    transition: color 0.15s ease;
+  }
+  .nav-links a:hover { color: var(--ivory); }
+  .nav-right { display: flex; align-items: center; gap: 1.1rem; }
+  .status-pill {
+    display: none;
+    align-items: center;
+    gap: 0.4rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.08em;
+    color: var(--ash);
+  }
+  .status-pill .dot {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--prism-1);
+    box-shadow: 0 0 6px var(--prism-1);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+  @media (min-width: 720px) { .status-pill { display: flex; } }
+  .nav-cta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--void);
+    background: var(--ivory);
+    padding: 0.5rem 0.95rem;
+    border-radius: 6px;
+    transition: opacity 0.15s ease;
+  }
+  .nav-cta:hover { opacity: 0.85; }
 
-  header {
-    padding: 3.2rem 1.5rem 2rem;
-    max-width: 760px;
+  main { position: relative; z-index: 1; }
+
+  /* ---------- HERO ---------- */
+  .hero {
+    max-width: 1180px;
     margin: 0 auto;
+    padding: clamp(2.5rem, 8vw, 5.5rem) 1.6rem clamp(3rem, 8vw, 5rem);
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 2rem;
+    align-items: center;
   }
-  .eyebrow {
+  @media (max-width: 880px) {
+    .hero { grid-template-columns: 1fr; padding-top: 2rem; }
+  }
+  .hero-eyebrow {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
@@ -86,87 +150,196 @@
     font-size: 0.7rem;
     letter-spacing: 0.16em;
     text-transform: uppercase;
-    color: var(--cyan);
-    padding: 0.3rem 0.7rem;
-    border: 1px solid rgba(95,234,219,0.3);
-    border-radius: 999px;
-    background: rgba(95,234,219,0.06);
+    color: var(--ash);
+    margin-bottom: 1.4rem;
   }
-  .eyebrow .dot {
-    width: 6px; height: 6px;
-    border-radius: 50%;
-    background: var(--cyan);
-    box-shadow: 0 0 8px var(--cyan);
-    animation: pulse 2s ease-in-out infinite;
+  .hero-eyebrow .line { width: 24px; height: 1px; background: var(--ash-dim); }
+  .hero h1 {
+    font-family: 'Fraunces', serif;
+    font-weight: 450;
+    font-size: clamp(2.6rem, 6vw, 4.4rem);
+    line-height: 1.02;
+    letter-spacing: -0.01em;
+    margin: 0 0 1.4rem;
   }
-  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
-
-  header h1 {
-    font-size: clamp(2rem, 5vw, 2.9rem);
-    line-height: 1.08;
-    margin: 1rem 0 0.7rem;
-    font-weight: 600;
-    letter-spacing: -0.02em;
-  }
-  header h1 .accent {
-    background: var(--spectrum);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-  header p {
-    margin: 0;
-    color: var(--ink-soft);
-    font-size: 1rem;
+  .hero h1 em { font-style: italic; font-weight: 300; }
+  .hero p.lede {
+    font-size: 1.06rem;
+    line-height: 1.65;
+    color: var(--ash);
     max-width: 46ch;
-    line-height: 1.6;
+    margin: 0 0 2.1rem;
+  }
+  .hero-actions { display: flex; align-items: center; gap: 1.6rem; flex-wrap: wrap; }
+  .btn-primary {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--ivory);
+    color: var(--void);
+    text-decoration: none;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    letter-spacing: 0.03em;
+    font-weight: 500;
+    padding: 0.9rem 1.5rem;
+    border-radius: 8px;
+    isolation: isolate;
+    transition: transform 0.15s ease;
+  }
+  .btn-primary::before {
+    content: '';
+    position: absolute;
+    inset: -1.5px;
+    border-radius: 9px;
+    background: var(--spectrum);
+    z-index: -1;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+  .btn-primary:hover { transform: translateY(-1px); }
+  .btn-primary:hover::before { opacity: 1; }
+  .link-quiet {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    color: var(--ash);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: color 0.15s ease;
+  }
+  .link-quiet:hover { color: var(--ivory); }
+
+  .figure-wrap {
+    position: relative;
+    aspect-ratio: 3 / 4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #particle-canvas { width: 100%; height: 100%; }
+  .figure-caption {
+    position: absolute;
+    bottom: -0.2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.62rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ash-dim);
+    white-space: nowrap;
   }
 
-  main {
-    max-width: 760px;
+  /* ---------- PROCESS ---------- */
+  .process {
+    max-width: 1180px;
     margin: 0 auto;
-    padding: 0.5rem 1.5rem 2rem;
+    padding: clamp(3rem, 7vw, 5rem) 1.6rem;
+    border-top: 1px solid var(--border);
   }
+  .section-eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ash);
+    margin-bottom: 0.9rem;
+  }
+  .process h2 {
+    font-family: 'Fraunces', serif;
+    font-weight: 450;
+    font-size: clamp(1.8rem, 3.4vw, 2.4rem);
+    margin: 0 0 2.6rem;
+    max-width: 20ch;
+  }
+  .process-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  @media (max-width: 780px) { .process-grid { grid-template-columns: 1fr; } }
+  .process-step {
+    background: var(--void);
+    padding: 2rem 1.7rem;
+  }
+  .process-step .num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    color: var(--prism-1);
+    margin-bottom: 1.4rem;
+    display: block;
+  }
+  .process-step h3 {
+    font-family: 'Fraunces', serif;
+    font-weight: 500;
+    font-size: 1.25rem;
+    margin: 0 0 0.7rem;
+  }
+  .process-step p {
+    font-size: 0.9rem;
+    line-height: 1.6;
+    color: var(--ash);
+    margin: 0;
+  }
+
+  /* ---------- CONSOLE (functional tool) ---------- */
+  .console-section {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: clamp(3rem, 7vw, 5rem) 1.6rem 4rem;
+    border-top: 1px solid var(--border);
+  }
+  .console-intro { margin-bottom: 2.2rem; }
+  .console-intro h2 {
+    font-family: 'Fraunces', serif;
+    font-weight: 450;
+    font-size: clamp(1.8rem, 3.4vw, 2.3rem);
+    margin: 0 0 0.6rem;
+  }
+  .console-intro p { color: var(--ash); margin: 0; font-size: 0.95rem; }
 
   .panel {
     background: var(--panel);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: 12px;
     backdrop-filter: blur(20px);
-    padding: 1.4rem;
-    margin-bottom: 1.1rem;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
   }
   .panel-head {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    margin-bottom: 0.9rem;
+    margin-bottom: 1rem;
   }
-  .panel-head h2 {
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 0.95rem;
-    font-weight: 600;
+  .panel-head h3 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 500;
     margin: 0;
-    letter-spacing: -0.01em;
+    color: var(--ivory);
   }
   .panel-head .tag {
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.65rem;
-    letter-spacing: 0.1em;
-    color: var(--ink-faint);
+    letter-spacing: 0.08em;
+    color: var(--ash-dim);
     text-transform: uppercase;
   }
 
-  .upload-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-  }
-  @media (max-width: 640px) {
-    .upload-grid { grid-template-columns: 1fr; }
-  }
+  .upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 620px) { .upload-grid { grid-template-columns: 1fr; } }
 
-  /* scan-target dropzone: corner-bracket reticle motif */
   .scanzone {
     position: relative;
     aspect-ratio: 3 / 4;
@@ -181,125 +354,59 @@
     justify-content: center;
     text-align: center;
     padding: 1rem;
-    transition: border-color 0.2s ease, background 0.2s ease;
+    transition: border-color 0.2s ease;
   }
   .scanzone:hover { border-color: var(--border-bright); }
   .scanzone input { display: none; }
-
   .scanzone .bracket {
     position: absolute;
-    width: 18px; height: 18px;
-    border: 2px solid var(--ink-faint);
+    width: 16px; height: 16px;
+    border: 1.5px solid var(--ash-dim);
     transition: border-color 0.2s ease;
     z-index: 3;
   }
-  .scanzone:hover .bracket,
-  .scanzone.has-image .bracket { border-color: var(--cyan); }
+  .scanzone:hover .bracket, .scanzone.has-image .bracket { border-color: var(--prism-1); }
   .bracket.tl { top: 10px; left: 10px; border-right: none; border-bottom: none; border-radius: 4px 0 0 0; }
   .bracket.tr { top: 10px; right: 10px; border-left: none; border-bottom: none; border-radius: 0 4px 0 0; }
   .bracket.bl { bottom: 10px; left: 10px; border-right: none; border-top: none; border-radius: 0 0 0 4px; }
   .bracket.br { bottom: 10px; right: 10px; border-left: none; border-top: none; border-radius: 0 0 4px 0; }
-
-  .scanzone .icon {
-    width: 34px; height: 34px;
-    margin-bottom: 0.7rem;
-    color: var(--ink-faint);
-  }
+  .scanzone .icon { width: 30px; height: 30px; margin-bottom: 0.7rem; color: var(--ash-dim); }
   .scan-label {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 0.68rem;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--ink-faint);
-    margin-bottom: 0.35rem;
+    font-size: 0.65rem; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--ash-dim); margin-bottom: 0.35rem;
   }
-  .dz-text {
-    font-size: 0.85rem;
-    color: var(--ink-soft);
-    line-height: 1.4;
-  }
-  .dz-text strong { color: var(--ink); font-weight: 500; }
-
-  .scanzone .thumb {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: none;
-  }
+  .dz-text { font-size: 0.83rem; color: var(--ash); line-height: 1.4; }
+  .dz-text strong { color: var(--ivory); font-weight: 500; }
+  .scanzone .thumb { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: none; }
   .scanzone .thumb.show { display: block; }
-  .scanzone.has-image .icon,
-  .scanzone.has-image .scan-label,
-  .scanzone.has-image .dz-text { display: none; }
+  .scanzone.has-image .icon, .scanzone.has-image .scan-label, .scanzone.has-image .dz-text { display: none; }
   .scanzone .overlay-label {
-    position: absolute;
-    bottom: 0; left: 0; right: 0;
+    position: absolute; bottom: 0; left: 0; right: 0;
     padding: 0.6rem 0.7rem;
     background: linear-gradient(to top, rgba(0,0,0,0.75), transparent);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.65rem;
-    letter-spacing: 0.08em;
-    color: var(--ink);
-    opacity: 0;
-    transition: opacity 0.2s ease;
-    z-index: 2;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.63rem; letter-spacing: 0.06em;
+    color: var(--ivory); opacity: 0; transition: opacity 0.2s ease; z-index: 2;
   }
   .scanzone.has-image .overlay-label { opacity: 1; }
 
-  /* sweeping scan line, idle ambient on empty zones */
-  .scanzone::after {
-    content: '';
-    position: absolute;
-    left: 8%; right: 8%;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, var(--cyan), transparent);
-    opacity: 0;
-    top: 0;
-  }
-  .scanzone:not(.has-image):hover::after {
-    opacity: 0.6;
-    animation: sweep 1.6s ease-in-out infinite;
-  }
-  @keyframes sweep {
-    0% { top: 8%; opacity: 0; }
-    15% { opacity: 0.7; }
-    85% { opacity: 0.7; }
-    100% { top: 92%; opacity: 0; }
-  }
-
   .check-row {
-    display: flex;
-    align-items: center;
-    gap: 0.55rem;
-    margin-top: 0.9rem;
-    font-size: 0.82rem;
-    color: var(--ink-soft);
-    cursor: pointer;
+    display: flex; align-items: center; gap: 0.55rem;
+    margin-top: 1rem; font-size: 0.82rem; color: var(--ash); cursor: pointer;
   }
   .check-row input {
-    appearance: none;
-    -webkit-appearance: none;
+    appearance: none; -webkit-appearance: none;
     width: 16px; height: 16px;
     border: 1px solid var(--border-bright);
     border-radius: 4px;
     background: var(--panel-solid);
-    cursor: pointer;
-    position: relative;
-    flex-shrink: 0;
+    cursor: pointer; position: relative; flex-shrink: 0;
   }
-  .check-row input:checked {
-    background: var(--cyan);
-    border-color: var(--cyan);
-  }
+  .check-row input:checked { background: var(--prism-1); border-color: var(--prism-1); }
   .check-row input:checked::after {
-    content: '';
-    position: absolute;
-    left: 4px; top: 1px;
-    width: 4px; height: 8px;
-    border: solid var(--bg);
-    border-width: 0 2px 2px 0;
-    transform: rotate(45deg);
+    content: ''; position: absolute; left: 4px; top: 1px;
+    width: 4px; height: 8px; border: solid var(--void);
+    border-width: 0 2px 2px 0; transform: rotate(45deg);
   }
 
   textarea {
@@ -310,14 +417,13 @@
     padding: 0.75rem 0.85rem;
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.85rem;
-    color: var(--ink);
+    color: var(--ivory);
     resize: vertical;
     min-height: 2.6rem;
   }
-  textarea::placeholder { color: var(--ink-faint); }
-  textarea:focus { outline: none; border-color: var(--cyan); }
+  textarea::placeholder { color: var(--ash-dim); }
+  textarea:focus { outline: none; border-color: var(--prism-1); }
 
-  /* segmented mode selector */
   .segmented {
     display: inline-flex;
     background: var(--panel-solid);
@@ -327,78 +433,53 @@
     gap: 3px;
   }
   .segmented label {
-    position: relative;
     padding: 0.5rem 1rem;
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.72rem;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: var(--ink-soft);
+    color: var(--ash);
     border-radius: 999px;
     cursor: pointer;
     transition: color 0.2s ease;
   }
   .segmented input { display: none; }
-  .segmented input:checked + span { color: var(--bg); }
-  .segmented label:has(input:checked) {
-    background: var(--cyan);
-    color: var(--bg);
-  }
-  .segmented label:has(input:checked) span { color: var(--bg); }
+  .segmented label:has(input:checked) { background: var(--ivory); color: var(--void); }
 
   .cta-row {
-    display: flex;
-    align-items: center;
-    gap: 1.1rem;
-    padding: 0.4rem 0 1.6rem;
-    flex-wrap: wrap;
+    display: flex; align-items: center; gap: 1.1rem;
+    padding: 0.6rem 0 0.5rem; flex-wrap: wrap;
   }
   button.generate {
     position: relative;
-    background: var(--ink);
-    color: var(--bg);
+    background: var(--ivory);
+    color: var(--void);
     border: none;
     padding: 0.9rem 1.8rem;
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 0.9rem;
-    font-weight: 600;
-    letter-spacing: 0.01em;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    font-weight: 500;
+    letter-spacing: 0.03em;
     border-radius: 8px;
     cursor: pointer;
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    transition: transform 0.15s ease;
     isolation: isolate;
   }
   button.generate::before {
-    content: '';
-    position: absolute;
-    inset: -1.5px;
-    border-radius: 9px;
-    background: var(--spectrum);
-    z-index: -1;
-    opacity: 0;
-    transition: opacity 0.2s ease;
+    content: ''; position: absolute; inset: -1.5px; border-radius: 9px;
+    background: var(--spectrum); z-index: -1; opacity: 0; transition: opacity 0.2s ease;
   }
-  button.generate:hover:not(:disabled) {
-    transform: translateY(-1px);
-  }
+  button.generate:hover:not(:disabled) { transform: translateY(-1px); }
   button.generate:hover:not(:disabled)::before { opacity: 1; }
-  button.generate:disabled {
-    background: var(--panel-solid);
-    color: var(--ink-faint);
-    cursor: not-allowed;
-  }
+  button.generate:disabled { background: var(--panel-solid); color: var(--ash-dim); cursor: not-allowed; }
 
-  .status {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.78rem;
-    color: var(--ink-soft);
-  }
+  .status { font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: var(--ash); }
   .status.err { color: var(--danger); }
 
   .spinner {
     width: 13px; height: 13px;
     border: 2px solid var(--border);
-    border-top-color: var(--cyan);
+    border-top-color: var(--prism-1);
     border-radius: 50%;
     display: inline-block;
     animation: spin 0.7s linear infinite;
@@ -407,182 +488,330 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* result panel with scan-reveal */
-  .result {
-    display: none;
-  }
+  .result { display: none; margin-top: 1rem; }
   .result-tag {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.68rem;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--cyan);
+    display: flex; align-items: center; gap: 0.5rem;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.68rem;
+    letter-spacing: 0.14em; text-transform: uppercase; color: var(--prism-1);
     margin-bottom: 0.9rem;
   }
-  .result-tag .dot {
-    width: 6px; height: 6px;
-    border-radius: 50%;
-    background: var(--cyan);
-    box-shadow: 0 0 8px var(--cyan);
-  }
+  .result-tag .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--prism-1); box-shadow: 0 0 8px var(--prism-1); }
   .result-frame {
-    position: relative;
-    border-radius: var(--radius);
-    overflow: hidden;
-    border: 1px solid var(--border-bright);
-    background: var(--panel-solid);
+    position: relative; border-radius: 12px; overflow: hidden;
+    border: 1px solid var(--border-bright); background: var(--panel-solid);
   }
-  .result-frame img {
-    width: 100%;
-    display: block;
-  }
-  .result-frame .bracket { width: 22px; height: 22px; border-color: var(--cyan); z-index: 3; }
+  .result-frame img { width: 100%; display: block; }
+  .result-frame .bracket { width: 20px; height: 20px; border-color: var(--prism-1); }
   .reveal-line {
-    position: absolute;
-    left: 0; right: 0; top: 0;
-    height: 2px;
+    position: absolute; left: 0; right: 0; top: 0; height: 2px;
     background: var(--spectrum);
-    box-shadow: 0 0 16px 2px var(--cyan);
+    box-shadow: 0 0 16px 2px var(--prism-1);
     animation: reveal 0.9s cubic-bezier(0.65,0,0.35,1) forwards;
     z-index: 2;
   }
-  @keyframes reveal {
-    from { top: 0; }
-    to { top: 100%; opacity: 0; }
-  }
+  @keyframes reveal { from { top: 0; } to { top: 100%; opacity: 0; } }
 
   .readout {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1.4rem;
-    margin-top: 0.9rem;
-    padding-top: 0.9rem;
-    border-top: 1px solid var(--border);
+    display: flex; flex-wrap: wrap; gap: 1.4rem;
+    margin-top: 0.9rem; padding-top: 0.9rem; border-top: 1px solid var(--border);
   }
   .readout div { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; }
-  .readout .k { color: var(--ink-faint); letter-spacing: 0.08em; text-transform: uppercase; display: block; margin-bottom: 0.2rem; }
-  .readout .v { color: var(--ink); }
-  .readout .v.ok { color: var(--cyan); }
+  .readout .k { color: var(--ash-dim); letter-spacing: 0.08em; text-transform: uppercase; display: block; margin-bottom: 0.2rem; }
+  .readout .v { color: var(--ivory); }
+  .readout .v.ok { color: var(--prism-1); }
 
+  /* ---------- FOOTER ---------- */
   footer {
-    text-align: center;
-    padding: 1.5rem 1.5rem 3rem;
-    color: var(--ink-faint);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.7rem;
-    letter-spacing: 0.02em;
+    border-top: 1px solid var(--border);
+    padding: 2.2rem 1.6rem;
   }
+  .footer-inner {
+    max-width: 1180px; margin: 0 auto;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 1rem;
+  }
+  .footer-status {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.66rem; letter-spacing: 0.06em;
+    color: var(--ash-dim); text-transform: uppercase;
+  }
+  .footer-links { display: flex; gap: 1.4rem; }
+  .footer-links a {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.68rem;
+    letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--ash); text-decoration: none;
+  }
+  .footer-links a:hover { color: var(--ivory); }
 
   @media (prefers-reduced-motion: reduce) {
-    .glow, .eyebrow .dot, .scanzone::after, .reveal-line, .spinner {
-      animation: none !important;
-    }
+    .status-pill .dot, .reveal-line, .spinner { animation: none !important; }
     .reveal-line { display: none; }
   }
 </style>
 </head>
 <body>
 
-<div class="glow"></div>
-
-<header>
-  <span class="eyebrow"><span class="dot"></span>AI Fitting Engine // Online</span>
-  <h1 class="display">See it on you<br><span class="accent">before you buy it.</span></h1>
-  <p>Upload a photo of yourself and the product. The engine renders a realistic composite of you wearing it — no fitting room required.</p>
-</header>
+<nav>
+  <div class="wordmark"><span class="mark"></span>VEIL</div>
+  <div class="nav-links">
+    <a href="#process">Technology</a>
+    <a href="#console">Console</a>
+  </div>
+  <div class="nav-right">
+    <span class="status-pill"><span class="dot"></span>ENGINE ONLINE</span>
+    <a class="nav-cta" href="#console">Launch console</a>
+  </div>
+</nav>
 
 <main>
 
-  <div class="panel">
-    <div class="panel-head">
-      <h2>Upload sources</h2>
-      <span class="tag">Step 1 / 2</span>
+  <section class="hero">
+    <div>
+      <div class="hero-eyebrow"><span class="line"></span>Synthesis engine — Gen. VII</div>
+      <h1 class="serif">The fitting room<br>is <em>obsolete.</em></h1>
+      <p class="lede">VEIL reconstructs your likeness from a photograph and renders any garment onto it — photoreal, in seconds, without a single stitch of real fabric touching you.</p>
+      <div class="hero-actions">
+        <a class="btn-primary" href="#console">Launch the console →</a>
+        <a class="link-quiet" href="#process">See how it works ↓</a>
+      </div>
     </div>
-    <div class="upload-grid">
-      <label class="scanzone" id="dz-selfie">
-        <input type="file" id="input-selfie" accept="image/*" />
-        <span class="bracket tl"></span><span class="bracket tr"></span><span class="bracket bl"></span><span class="bracket br"></span>
-        <img class="thumb" id="thumb-selfie" />
-        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
-        <span class="scan-label">Subject</span>
-        <span class="dz-text" id="text-selfie"><strong>Upload a selfie</strong><br>Front-facing, good lighting</span>
-        <span class="overlay-label" id="overlay-selfie"></span>
+    <div class="figure-wrap">
+      <canvas id="particle-canvas"></canvas>
+      <span class="figure-caption">RECONSTRUCTING LIKENESS //</span>
+    </div>
+  </section>
+
+  <section class="process" id="process">
+    <div class="section-eyebrow">The pipeline</div>
+    <h2 class="serif">Three passes. One likeness.</h2>
+    <div class="process-grid">
+      <div class="process-step">
+        <span class="num mono">01 — CAPTURE</span>
+        <h3 class="serif">Two photographs</h3>
+        <p>A likeness and a garment. That's the entire input the engine requires — no scanner, no fitting, no showroom.</p>
+      </div>
+      <div class="process-step">
+        <span class="num mono">02 — SYNTHESIZE</span>
+        <h3 class="serif">Neural reconstruction</h3>
+        <p>Fabric is mapped to form. Identity, pose, and light are preserved through every pass of the pipeline.</p>
+      </div>
+      <div class="process-step">
+        <span class="num mono">03 — RENDER</span>
+        <h3 class="serif">Photoreal delivery</h3>
+        <p>A finished composite — upscaled, verified, sized for delivery — returned in under a minute.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="console-section" id="console">
+    <div class="console-intro">
+      <div class="section-eyebrow">The console</div>
+      <h2 class="serif">Run a synthesis.</h2>
+      <p>Two images in. A rendered likeness out.</p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h3>Upload sources</h3><span class="tag">01 / 02</span></div>
+      <div class="upload-grid">
+        <label class="scanzone" id="dz-selfie">
+          <input type="file" id="input-selfie" accept="image/*" />
+          <span class="bracket tl"></span><span class="bracket tr"></span><span class="bracket bl"></span><span class="bracket br"></span>
+          <img class="thumb" id="thumb-selfie" />
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+          <span class="scan-label">Likeness</span>
+          <span class="dz-text" id="text-selfie"><strong>Upload a selfie</strong><br>Front-facing, good lighting</span>
+          <span class="overlay-label" id="overlay-selfie"></span>
+        </label>
+
+        <label class="scanzone" id="dz-product">
+          <input type="file" id="input-product" accept="image/*" />
+          <span class="bracket tl"></span><span class="bracket tr"></span><span class="bracket bl"></span><span class="bracket br"></span>
+          <img class="thumb" id="thumb-product" />
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6 8l1.5-3h9L18 8"/><path d="M4 8h16l-1.2 12H5.2L4 8z"/></svg>
+          <span class="scan-label">Garment</span>
+          <span class="dz-text" id="text-product"><strong>Upload the product</strong><br>Flat-lay or on-model</span>
+          <span class="overlay-label" id="overlay-product"></span>
+        </label>
+      </div>
+      <label class="check-row">
+        <input type="checkbox" id="full-outfit" />
+        This photo shows a full outfit (e.g. suit, co-ord set) — apply both top and bottom
       </label>
+    </div>
 
-      <label class="scanzone" id="dz-product">
-        <input type="file" id="input-product" accept="image/*" />
+    <div class="panel">
+      <div class="panel-head"><h3>Description</h3><span class="tag">Optional</span></div>
+      <textarea id="description" placeholder="// e.g. navy cotton oversized hoodie"></textarea>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h3>Render quality</h3><span class="tag">02 / 02</span></div>
+      <div class="segmented">
+        <label><input type="radio" name="mode" value="quality" checked /><span>Quality</span></label>
+        <label><input type="radio" name="mode" value="turbo" /><span>Turbo</span></label>
+      </div>
+    </div>
+
+    <div class="cta-row">
+      <button class="generate" id="btn-generate">Generate try-on</button>
+      <span class="status" id="status"></span>
+    </div>
+
+    <div class="result" id="result">
+      <div class="result-tag"><span class="dot"></span>Synthesis complete</div>
+      <div class="result-frame">
         <span class="bracket tl"></span><span class="bracket tr"></span><span class="bracket bl"></span><span class="bracket br"></span>
-        <img class="thumb" id="thumb-product" />
-        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6 8l1.5-3h9L18 8"/><path d="M4 8h16l-1.2 12H5.2L4 8z"/></svg>
-        <span class="scan-label">Garment</span>
-        <span class="dz-text" id="text-product"><strong>Upload the product</strong><br>Flat-lay or on-model</span>
-        <span class="overlay-label" id="overlay-product"></span>
-      </label>
+        <div class="reveal-line" id="reveal-line"></div>
+        <img id="result-img" alt="Virtual try-on result" />
+      </div>
+      <div class="readout" id="readout"></div>
     </div>
-
-    <label class="check-row">
-      <input type="checkbox" id="full-outfit" />
-      This photo shows a full outfit (e.g. suit, co-ord set) — apply both top and bottom
-    </label>
-  </div>
-
-  <div class="panel">
-    <div class="panel-head">
-      <h2>Description</h2>
-      <span class="tag">Optional</span>
-    </div>
-    <textarea id="description" placeholder="// e.g. navy cotton oversized hoodie"></textarea>
-  </div>
-
-  <div class="panel">
-    <div class="panel-head">
-      <h2>Render quality</h2>
-      <span class="tag">Step 2 / 2</span>
-    </div>
-    <div class="segmented">
-      <label><input type="radio" name="mode" value="quality" checked /><span>Quality</span></label>
-      <label><input type="radio" name="mode" value="turbo" /><span>Turbo</span></label>
-    </div>
-  </div>
-
-  <div class="cta-row">
-    <button class="generate" id="btn-generate">Generate try-on</button>
-    <span class="status" id="status"></span>
-  </div>
-
-  <div class="result" id="result">
-    <div class="result-tag"><span class="dot"></span>Render complete</div>
-    <div class="result-frame">
-      <span class="bracket tl"></span><span class="bracket tr"></span><span class="bracket bl"></span><span class="bracket br"></span>
-      <div class="reveal-line" id="reveal-line"></div>
-      <img id="result-img" alt="Virtual try-on result" />
-    </div>
-    <div class="readout" id="readout"></div>
-  </div>
+  </section>
 
 </main>
 
-<footer>IMAGES ARE PROCESSED FOR GENERATION AND ARE NOT STORED BY THIS APP</footer>
+<footer>
+  <div class="footer-inner">
+    <div class="footer-status mono">SYNTHESIS ENGINE GEN. VII · STATUS: NOMINAL</div>
+    <div class="footer-links">
+      <a href="#process">Technology</a>
+      <a href="#console">Console</a>
+    </div>
+  </div>
+</footer>
 
 <script>
+  // ---------- Particle likeness reconstruction (hero signature) ----------
+  function drawSilhouette(ctx, w, h) {
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = '#fff';
+    const cx = w / 2;
+    const figureHeight = 522; // local unit height of the path below
+    const scale = (h * 0.86) / figureHeight;
+    const scaledHeight = figureHeight * scale;
+    const topY = (h - scaledHeight) * 0.42;
+    ctx.save();
+    ctx.translate(cx, topY);
+    ctx.scale(scale, scale);
+    ctx.beginPath(); ctx.ellipse(0, 35, 28, 34, 0, 0, Math.PI * 2); ctx.fill(); // head
+    ctx.fillRect(-10, 60, 20, 22); // neck
+    ctx.beginPath(); // torso
+    ctx.moveTo(-72, 92); ctx.lineTo(72, 92); ctx.lineTo(50, 232); ctx.lineTo(-50, 232);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath(); // hips
+    ctx.moveTo(-55, 226); ctx.lineTo(55, 226); ctx.lineTo(60, 292); ctx.lineTo(-60, 292);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(-92, 162, 17, 86, -0.14, 0, Math.PI * 2); ctx.fill(); // left arm
+    ctx.beginPath(); ctx.ellipse(92, 162, 17, 86, 0.14, 0, Math.PI * 2); ctx.fill(); // right arm
+    ctx.beginPath(); ctx.ellipse(-28, 405, 23, 118, 0, 0, Math.PI * 2); ctx.fill(); // left leg
+    ctx.beginPath(); ctx.ellipse(28, 405, 23, 118, 0, 0, Math.PI * 2); ctx.fill(); // right leg
+    ctx.restore();
+  }
+
+  function spectrumColor(t) {
+    const stops = [[125,249,216],[183,156,255],[255,158,196]];
+    const seg = t * (stops.length - 1);
+    const i = Math.min(stops.length - 2, Math.floor(seg));
+    const f = seg - i;
+    const a = stops[i], b = stops[i + 1];
+    const r = Math.round(a[0] + (b[0] - a[0]) * f);
+    const g = Math.round(a[1] + (b[1] - a[1]) * f);
+    const bl = Math.round(a[2] + (b[2] - a[2]) * f);
+    return `rgb(${r},${g},${bl})`;
+  }
+
+  function initParticleField() {
+    const canvas = document.getElementById('particle-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const rect = canvas.getBoundingClientRect();
+    const w = rect.width, h = rect.height;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const mask = document.createElement('canvas');
+    const maskW = Math.round(w);
+    const maskH = Math.round(h);
+    mask.width = maskW; mask.height = maskH;
+    const mctx = mask.getContext('2d');
+    drawSilhouette(mctx, maskW, maskH);
+    const imgData = mctx.getImageData(0, 0, maskW, maskH).data;
+
+    const targets = [];
+    const step = window.innerWidth < 640 ? 2.2 : 1.8;
+    for (let y = 0; y < maskH; y += step) {
+      for (let x = 0; x < maskW; x += step) {
+        const xi = Math.floor(x), yi = Math.floor(y);
+        if (imgData[(yi * maskW + xi) * 4 + 3] > 80) targets.push({ x, y });
+      }
+    }
+    for (let i = targets.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [targets[i], targets[j]] = [targets[j], targets[i]];
+    }
+
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const N = Math.min(prefersReducedMotion ? 2000 : 6500, targets.length);
+    const particles = [];
+    for (let i = 0; i < N; i++) {
+      const t = targets[i];
+      particles.push({
+        x: Math.random() * w, y: Math.random() * h,
+        tx: t.x, ty: t.y,
+        phase: Math.random() * Math.PI * 2,
+        speed: 0.5 + Math.random() * 0.5,
+        size: 0.8 + Math.random() * 1.0,
+        colorT: (t.y / h) * 0.6 + (t.x / w) * 0.4,
+      });
+    }
+
+    let start = null;
+    const formDuration = prefersReducedMotion ? 1 : 2200;
+    function frame(ts) {
+      if (!start) start = ts;
+      const elapsed = ts - start;
+      const formT = Math.min(1, elapsed / formDuration);
+      const eased = 1 - Math.pow(1 - formT, 3);
+      ctx.clearRect(0, 0, w, h);
+      for (const p of particles) {
+        const idle = prefersReducedMotion ? 0 : eased;
+        const driftX = Math.sin(ts * 0.0006 * p.speed + p.phase) * 2.4 * idle;
+        const driftY = Math.cos(ts * 0.0005 * p.speed + p.phase) * 2.4 * idle;
+        const cx = p.x + (p.tx - p.x) * eased + driftX;
+        const cy = p.y + (p.ty - p.y) * eased + driftY;
+        const color = spectrumColor(p.colorT);
+        ctx.fillStyle = color;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 3;
+        ctx.globalAlpha = 0.55 + 0.45 * eased;
+        ctx.beginPath();
+        ctx.arc(cx, cy, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  initParticleField();
+
+  // ---------- Console logic (unchanged functional behavior) ----------
   const state = { selfie: null, product: null };
 
   function wireDropzone(key, dzId, inputId, thumbId, textId) {
     const dz = document.getElementById(dzId);
     const input = document.getElementById(inputId);
     const thumb = document.getElementById(thumbId);
-    const text = document.getElementById(textId);
 
     // NOTE: no manual dz.click() -> input.click() wiring here on purpose.
     // `input` is a descendant of the `<label>` (dz), so the browser already
     // opens the file picker natively on click. Adding a second, JS-triggered
     // input.click() on top of that causes a double-fire that mobile browsers
-    // (notably iOS Safari) can silently drop — the picker opens, a photo
-    // gets picked, but the `change` event never registers. Native-only
-    // triggering fixes that.
+    // (notably iOS Safari) can silently drop.
     input.addEventListener('change', () => {
       const file = input.files[0];
       if (!file) return;
@@ -631,9 +860,6 @@
       if (contentType.includes('application/json')) {
         data = await res.json();
       } else {
-        // Server/platform returned something non-JSON (e.g. a host's error page
-        // during a cold start or timeout) — surface a useful message instead of
-        // crashing on JSON.parse.
         const text = await res.text();
         throw new Error(
           `Server returned an unexpected response (HTTP ${res.status}). ` +
@@ -647,15 +873,11 @@
       resultImg.src = data.imageUrl;
       resultEl.style.display = 'block';
 
-      // Restart the scan-reveal sweep animation (CSS animations don't replay
-      // on their own when the element was already in the DOM).
       const revealLine = document.getElementById('reveal-line');
       revealLine.style.animation = 'none';
-      void revealLine.offsetWidth; // force reflow
+      void revealLine.offsetWidth;
       revealLine.style.animation = '';
 
-      // HUD-style readout of what actually happened, from the response fields
-      // that already exist server-side (upscaled, bodyDetection, finalSizeBytes).
       const readout = document.getElementById('readout');
       const rows = [];
       rows.push(['Mode', mode.toUpperCase()]);
