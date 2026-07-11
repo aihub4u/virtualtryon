@@ -50,6 +50,63 @@
     z-index: 0;
   }
 
+  /* Film-grain texture — cheap (one static SVG noise layer, no per-frame
+     recompute), but does more for a "premium/cinematic" feel than almost
+     any other single change: it's the difference between "flat CSS" and
+     "shot on something." */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    opacity: 0.035;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* Aurora — large soft color fields that drift slowly behind the hero.
+     Built from radial-gradient softness (not filter:blur, which is
+     expensive) and animated with transform only, so it's GPU-composited
+     and costs nothing on scroll or interaction. */
+  .aurora {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  .aurora span {
+    position: absolute;
+    border-radius: 50%;
+    opacity: 0.16;
+    will-change: transform;
+  }
+  .aurora span:nth-child(1) {
+    width: 62vw; height: 62vw; max-width: 900px; max-height: 900px;
+    top: -18vw; left: -8vw;
+    background: radial-gradient(circle, var(--prism-1), transparent 68%);
+    animation: auroraDrift1 26s ease-in-out infinite alternate;
+  }
+  .aurora span:nth-child(2) {
+    width: 52vw; height: 52vw; max-width: 760px; max-height: 760px;
+    top: -6vw; right: -14vw;
+    background: radial-gradient(circle, var(--prism-2), transparent 68%);
+    animation: auroraDrift2 32s ease-in-out infinite alternate;
+  }
+  .aurora span:nth-child(3) {
+    width: 40vw; height: 40vw; max-width: 600px; max-height: 600px;
+    top: 22vw; left: 32vw;
+    background: radial-gradient(circle, var(--prism-3), transparent 68%);
+    animation: auroraDrift3 22s ease-in-out infinite alternate;
+  }
+  @keyframes auroraDrift1 { from { transform: translate(0,0) scale(1); } to { transform: translate(4vw, 5vw) scale(1.12); } }
+  @keyframes auroraDrift2 { from { transform: translate(0,0) scale(1); } to { transform: translate(-5vw, 4vw) scale(1.08); } }
+  @keyframes auroraDrift3 { from { transform: translate(0,0) scale(1); } to { transform: translate(3vw, -4vw) scale(1.15); } }
+  @media (prefers-reduced-motion: reduce) {
+    .aurora span { animation: none !important; }
+  }
+
   /* ---------- NAV ---------- */
   nav {
     position: sticky;
@@ -134,16 +191,56 @@
 
   /* ---------- HERO ---------- */
   .hero {
-    max-width: 1180px;
+    position: relative;
+    min-height: 100svh;
+    max-width: 1400px;
     margin: 0 auto;
-    padding: clamp(2.5rem, 8vw, 5.5rem) 1.6rem clamp(3rem, 8vw, 5rem);
+    padding: clamp(1.5rem, 6vw, 3rem) 1.6rem 2rem;
     display: grid;
-    grid-template-columns: 1.1fr 0.9fr;
-    gap: 2rem;
+    grid-template-columns: 1fr;
     align-items: center;
   }
+  .hero-figure-layer {
+    grid-column: 1;
+    grid-row: 1;
+    position: relative;
+    height: clamp(420px, 78svh, 900px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .hero-text-layer {
+    grid-column: 1;
+    grid-row: 1;
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    pointer-events: none;
+  }
+  .hero-text-layer > * { pointer-events: auto; }
+  @media (min-width: 881px) {
+    .hero-text-layer { padding-right: 38%; }
+  }
+  /* Below 881px there isn't enough width for the overlap composition to
+     stay legible — text was landing directly on top of the figure. Stack
+     normally instead: text first (grid-row swapped via order), figure
+     beneath at reduced presence, no overlap. */
   @media (max-width: 880px) {
-    .hero { grid-template-columns: 1fr; padding-top: 2rem; }
+    .hero {
+      min-height: auto;
+      padding-top: 5.5rem;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .hero-text-layer { order: 1; }
+    .hero-figure-layer {
+      order: 2;
+      height: clamp(280px, 42vh, 420px);
+      margin-top: 1.5rem;
+      opacity: 0.85;
+    }
   }
   .hero-eyebrow {
     display: inline-flex;
@@ -160,9 +257,9 @@
   .hero h1 {
     font-family: 'Fraunces', serif;
     font-weight: 450;
-    font-size: clamp(2.6rem, 6vw, 4.4rem);
-    line-height: 1.02;
-    letter-spacing: -0.01em;
+    font-size: clamp(3.2rem, 8.2vw, 7rem);
+    line-height: 0.98;
+    letter-spacing: -0.015em;
     margin: 0 0 1.4rem;
   }
   .hero h1 em { font-style: italic; font-weight: 300; }
@@ -216,13 +313,16 @@
   .link-quiet:hover { color: var(--ivory); }
 
   .figure-wrap {
-    position: relative;
-    aspect-ratio: 3 / 4;
+    position: absolute;
+    inset: 0;
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-end;
   }
-  #particle-canvas { width: 100%; height: 100%; }
+  #particle-canvas { height: 100%; width: auto; max-width: 100%; }
+  @media (max-width: 880px) {
+    .figure-wrap { justify-content: center; }
+  }
   .figure-caption {
     position: absolute;
     bottom: -0.2rem;
@@ -271,6 +371,9 @@
   .process-step {
     background: var(--void);
     padding: 2rem 1.7rem;
+    transform: perspective(900px) rotateX(0deg) rotateY(0deg);
+    transition: transform 0.35s cubic-bezier(0.16,1,0.3,1), background 0.25s ease;
+    will-change: transform;
   }
   .process-step .num {
     font-family: 'JetBrains Mono', monospace;
@@ -319,6 +422,13 @@
     border-radius: 12px;
     padding: 1.5rem;
     margin-bottom: 1rem;
+    transform: perspective(1000px) rotateX(0deg) rotateY(0deg);
+    transition: transform 0.35s cubic-bezier(0.16,1,0.3,1), box-shadow 0.35s ease, border-color 0.35s ease;
+    will-change: transform;
+  }
+  .panel:hover {
+    border-color: var(--border-bright);
+    box-shadow: 0 20px 60px -20px rgba(125,249,216,0.08), 0 0 0 1px rgba(255,255,255,0.03) inset;
   }
   .panel-head {
     display: flex;
@@ -565,6 +675,17 @@
     .reveal { opacity: 1; transform: none; transition: none; }
   }
 
+  /* ---------- page-load choreography (hero elements only, fires once) ---------- */
+  .reveal-load {
+    opacity: 0;
+    transform: translateY(16px);
+    transition: opacity 0.8s cubic-bezier(0.16,1,0.3,1), transform 0.8s cubic-bezier(0.16,1,0.3,1);
+  }
+  .reveal-load.in-view { opacity: 1; transform: translateY(0); }
+  @media (prefers-reduced-motion: reduce) {
+    .reveal-load { opacity: 1; transform: none; transition: none; }
+  }
+
   /* ---------- cursor-reactive ambient glow ---------- */
   .cursor-glow {
     position: fixed;
@@ -594,9 +715,6 @@
   .live-readout span.v { color: var(--prism-1); }
 
   /* ---------- process card hover ---------- */
-  .process-step {
-    transition: background 0.25s ease;
-  }
   .process-step:hover { background: rgba(255,255,255,0.02); }
   .process-step .num { transition: color 0.25s ease, text-shadow 0.25s ease; }
   .process-step:hover .num { text-shadow: 0 0 10px currentColor; }
@@ -616,6 +734,7 @@
 </head>
 <body>
 
+<div class="aurora"><span></span><span></span><span></span></div>
 <div class="cursor-glow" id="cursor-glow"></div>
 
 <nav>
@@ -633,23 +752,25 @@
 <main>
 
   <section class="hero">
-    <div>
-      <div class="hero-eyebrow"><span class="line"></span>Synthesis engine — Gen. VII</div>
-      <h1 class="serif">The fitting room<br>is <em>obsolete.</em></h1>
-      <p class="lede">VEIL reconstructs your likeness from a photograph and renders any garment onto it — photoreal, in seconds, without a single stitch of real fabric touching you.</p>
-      <div class="hero-actions">
+    <div class="hero-figure-layer">
+      <div class="figure-wrap">
+        <canvas id="particle-canvas"></canvas>
+        <span class="figure-caption">RECONSTRUCTING LIKENESS //</span>
+      </div>
+    </div>
+    <div class="hero-text-layer">
+      <div class="hero-eyebrow reveal-load"><span class="line"></span>Synthesis engine — Gen. VII</div>
+      <h1 class="serif reveal-load" style="transition-delay:80ms">The fitting room<br>is <em>obsolete.</em></h1>
+      <p class="lede reveal-load" style="transition-delay:160ms">VEIL reconstructs your likeness from a photograph and renders any garment onto it — photoreal, in seconds, without a single stitch of real fabric touching you.</p>
+      <div class="hero-actions reveal-load" style="transition-delay:240ms">
         <a class="btn-primary" href="#console">Launch the console →</a>
         <a class="link-quiet" href="#process">See how it works ↓</a>
       </div>
-      <div class="live-readout mono">
+      <div class="live-readout mono reveal-load" style="transition-delay:320ms">
         <span>SYNTHESES TODAY: <span class="v" id="live-counter">000000</span></span>
         <span>LATENCY: <span class="v">0.8s</span></span>
         <span>UPTIME: <span class="v">99.98%</span></span>
       </div>
-    </div>
-    <div class="figure-wrap">
-      <canvas id="particle-canvas"></canvas>
-      <span class="figure-caption">RECONSTRUCTING LIKENESS //</span>
     </div>
   </section>
 
@@ -797,8 +918,13 @@
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const rect = canvas.getBoundingClientRect();
-    const w = rect.width, h = rect.height;
+    // Derive size from the container's height (canvas itself uses
+    // height:100%; width:auto, so its own pre-render rect isn't reliable —
+    // measuring the parent and fixing a portrait aspect ratio avoids a
+    // flash of wrong proportions before the canvas attributes are set).
+    const containerRect = canvas.parentElement.getBoundingClientRect();
+    const h = containerRect.height;
+    const w = h * (3 / 4);
     canvas.width = w * dpr;
     canvas.height = h * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -905,6 +1031,34 @@
   }
 
   initParticleField();
+
+  // ---------- Mouse-driven 3D tilt (transform-only, cheap) ----------
+  function wireTilt(selector, maxDeg) {
+    document.querySelectorAll(selector).forEach((el) => {
+      el.addEventListener('mousemove', (e) => {
+        const r = el.getBoundingClientRect();
+        const px = (e.clientX - r.left) / r.width - 0.5;
+        const py = (e.clientY - r.top) / r.height - 0.5;
+        el.style.transform = `perspective(1000px) rotateX(${(-py * maxDeg).toFixed(2)}deg) rotateY(${(px * maxDeg).toFixed(2)}deg)`;
+      });
+      el.addEventListener('mouseleave', () => {
+        el.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg)';
+      });
+    });
+  }
+  if (window.matchMedia('(min-width: 900px) and (hover: hover)').matches) {
+    wireTilt('.panel', 2.5);
+    wireTilt('.process-step', 3.5);
+  }
+
+  // Page-load choreography: staggered entrance for hero elements (delays set
+  // inline per-element in the markup). Small timeout ensures the initial
+  // (pre-animation) state actually paints first, so the transition is visible.
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      document.querySelectorAll('.reveal-load').forEach((el) => el.classList.add('in-view'));
+    });
+  });
 
   // ---------- Scroll reveal (IntersectionObserver — cheap, fires once per element) ----------
   const revealEls = document.querySelectorAll('.reveal');
