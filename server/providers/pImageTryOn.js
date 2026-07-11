@@ -32,9 +32,11 @@
 // commercial use is permitted before sending real customer traffic through it.
 
 const Replicate = require('replicate');
+const { randomUUID } = require('crypto');
 const { detectFullBody } = require('../lib/poseDetection');
-const { enforceMaxSize } = require('../lib/imageSizeLimit');
+const { enforceMaxSize, DEFAULT_MAX_BYTES } = require('../lib/imageSizeLimit');
 const { splitGarmentTopBottom } = require('../lib/garmentSplit');
+const { uploadBuffer } = require('../lib/storage');
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -158,22 +160,44 @@ async function runTryOn({ modelImage, garmentImage, turbo, fullOutfit }) {
     }
   }
 
-  // Guarantee the final delivered file is under budget, regardless of how
-  // detailed/complex the content is (quality settings alone can't promise
-  // this — see lib/imageSizeLimit.js). Returned as a data URI rather than
-  // the Replicate URL so the size guarantee actually reaches the client,
-  // not just whatever Replicate happens to be hosting.
-  let sizeEnforcedUrl = imageUrl;
+  // Return Replicate's URL directly in the normal case — fast, simple, no
+  // extra hop. Only step in with compression + re-hosting if the file
+  // actually exceeds 5MB, which should be rare for real photos (the earlier
+  // approach ran this on every single request, which was needless overhead
+  // for the common case).
+  let finalUrl = imageUrl;
   let finalSizeBytes = null;
+  let storageWarning = null;
+
   try {
-    const { buffer, contentType, bytes } = await enforceMaxSize(imageUrl);
-    sizeEnforcedUrl = `data:${contentType};base64,${buffer.toString('base64')}`;
-    finalSizeBytes = bytes;
+    const headRes = await fetch(imageUrl, { method: 'HEAD' });
+    const contentLength = headRes.headers.get('content-length');
+    finalSizeBytes = contentLength ? parseInt(contentLength, 10) : null;
   } catch (err) {
-    console.error('Size enforcement failed, returning original (unverified size) URL:', err.message);
+    console.error('Could not check result size via HEAD request, returning Replicate URL as-is:', err.message);
   }
 
-  return { imageUrl: sizeEnforcedUrl, upscaled, upscaleWarning, bodyDetection, finalSizeBytes };
+  const overBudget = finalSizeBytes !== null && finalSizeBytes > DEFAULT_MAX_BYTES;
+  if (overBudget) {
+    console.log(`Result is ${(finalSizeBytes / 1024 / 1024).toFixed(2)}MB, over the 5MB budget — compressing`);
+    try {
+      const { buffer, contentType, bytes } = await enforceMaxSize(imageUrl);
+      finalSizeBytes = bytes;
+      try {
+        finalUrl = await uploadBuffer(buffer, `tryon-results/${randomUUID()}.jpg`, contentType);
+      } catch (uploadErr) {
+        // R2 not configured or upload failed — fall back to a data URI so the
+        // size guarantee still holds, just not as a shareable link this time.
+        finalUrl = `data:${contentType};base64,${buffer.toString('base64')}`;
+        storageWarning = `Result exceeded 5MB and was compressed, but could not upload to persistent storage (${uploadErr.message}) — returning a temporary embedded image instead of a URL. Set R2_ACCOUNT_ID/R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY/R2_BUCKET/R2_PUBLIC_BASE_URL to fix this.`;
+        console.error('R2 upload failed, falling back to data URI:', uploadErr.message);
+      }
+    } catch (err) {
+      console.error('Size enforcement failed, returning original (unverified size) URL:', err.message);
+    }
+  }
+
+  return { imageUrl: finalUrl, upscaled, upscaleWarning, bodyDetection, finalSizeBytes, storageWarning };
 }
 
 module.exports = { runTryOn };

@@ -22,20 +22,17 @@ function getClient() {
 }
 
 /**
- * Downloads a (temporary, Replicate-hosted) image URL and re-uploads it to
- * R2, returning a permanent public URL.
+ * Uploads a buffer you already have in memory directly to R2, returning a
+ * permanent public URL. Use this when you've already downloaded/processed
+ * the image (e.g. after size-limit compression) — persistResultImage() below
+ * is for the separate case of copying a Replicate-hosted URL you haven't
+ * fetched yet.
  */
-async function persistResultImage(temporaryUrl, key) {
+async function uploadBuffer(buffer, key, contentType = 'image/jpeg') {
   const bucket = process.env.R2_BUCKET;
-  const publicBaseUrl = process.env.R2_PUBLIC_BASE_URL; // e.g. https://cdn.yourdomain.com or the r2.dev URL
+  const publicBaseUrl = process.env.R2_PUBLIC_BASE_URL;
   if (!bucket) throw new Error('R2_BUCKET is not set');
   if (!publicBaseUrl) throw new Error('R2_PUBLIC_BASE_URL is not set');
-
-  const res = await fetch(temporaryUrl);
-  if (!res.ok) throw new Error(`Failed to download temporary image (${res.status})`);
-  const arrayBuffer = await res.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
-  const contentType = res.headers.get('content-type') || 'image/jpeg';
 
   const client = getClient();
   await client.send(
@@ -50,4 +47,17 @@ async function persistResultImage(temporaryUrl, key) {
   return `${publicBaseUrl.replace(/\/$/, '')}/${key}`;
 }
 
-module.exports = { persistResultImage };
+/**
+ * Downloads a (temporary, Replicate-hosted) image URL and re-uploads it to
+ * R2, returning a permanent public URL.
+ */
+async function persistResultImage(temporaryUrl, key) {
+  const res = await fetch(temporaryUrl);
+  if (!res.ok) throw new Error(`Failed to download temporary image (${res.status})`);
+  const arrayBuffer = await res.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+  const contentType = res.headers.get('content-type') || 'image/jpeg';
+  return uploadBuffer(buffer, key, contentType);
+}
+
+module.exports = { persistResultImage, uploadBuffer };

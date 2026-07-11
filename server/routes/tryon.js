@@ -93,6 +93,7 @@ router.post(
         upscaleWarning: result.upscaleWarning ?? null,
         bodyDetection: result.bodyDetection ?? null,
         finalSizeBytes: result.finalSizeBytes ?? null,
+        storageWarning: result.storageWarning ?? null,
       });
     } catch (err) {
       if (err.code === 'FULL_BODY_NOT_DETECTED') {
