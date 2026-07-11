@@ -1,20 +1,22 @@
 // lib/poseDetection.js
 // Detects whether a selfie shows enough of the body (shoulders/torso) for a
-// direct try-on, or whether it's a face-only crop that needs the
-// generic-body + face-swap fallback path instead.
+// direct try-on, or whether it's a face-only crop that should be rejected
+// with a clear error instead of generating a broken result.
 //
 // Uses lucataco/moondream2 on Replicate — a vision-language model, asked a
-// direct yes/no question about the photo. This replaces two earlier failed
-// attempts:
+// direct yes/no question about the photo. History on how this landed here:
 //   1. ultralytics/yolo26-pose — confirmed via live 404 not to exist.
-//   2. Claude vision directly — worked, but the person asked for a
-//      Replicate-only solution instead.
-// moondream2's schema (input: `image`, `prompt`; output: list of text
-// strings) is corroborated across multiple independent sources (not a
-// single guessed page), and it's Apache-2.0 licensed — commercial-safe,
-// unlike some of the try-on models elsewhere in this stack. Still, if you
-// hit a validation error, check https://replicate.com/lucataco/moondream2/api
-// directly and adjust the input object below.
+//   2. Claude vision directly — worked, but a Replicate-only solution was wanted.
+//   3. lucataco/moondream2 without a pinned version — ALSO 404'd. Reason:
+//      it's a community model (not "official"), and those need an explicit
+//      version hash, same as prunaai/p-image-upscale did elsewhere in this
+//      codebase. Plain `owner/name` only works for official models.
+// The version hash below was pulled directly from Replicate's own versions
+// page (https://replicate.com/lucataco/moondream2/versions), not guessed —
+// it's the actual "Latest" version listed there as of this writing. If
+// lucataco publishes a newer version later, check that page again.
+
+const MODEL_VERSION = 'lucataco/moondream2:72ccb656353c348c1385df54b237eeb7bfa874bf11486cf0b9473e691b662d31';
 
 const QUESTION =
   "Does this photo clearly show the person's shoulders and upper torso (not just a close-up face/headshot)? Answer with exactly one word: YES or NO.";
@@ -28,7 +30,7 @@ const QUESTION =
  * returns text that doesn't clearly parse to YES/NO.
  */
 async function detectFullBody(replicate, imageInput) {
-  const output = await replicate.run('lucataco/moondream2', {
+  const output = await replicate.run(MODEL_VERSION, {
     input: {
       image: imageInput,
       prompt: QUESTION,
