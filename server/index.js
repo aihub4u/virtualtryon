@@ -5,6 +5,7 @@ const express = require('express');
 const cors = require('cors');
 
 const tryonRoute = require('./routes/tryon');
+const faceswapRoute = require('./routes/faceswap');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -34,6 +35,10 @@ app.get('/health', (req, res) => {
 
 // Synchronous upload-based flow (single-service, good for low/medium traffic)
 app.use('/api/tryon', tryonRoute);
+
+// Standalone face swap — swap a selfie's face onto ANY base image, separate
+// from the garment try-on pipeline entirely.
+app.use('/api/faceswap', faceswapRoute);
 
 // Async job-based flow (POST creates a job, GET polls it) — this is the one
 // built for scale: queue-backed, webhook-driven, safe for campaign traffic.

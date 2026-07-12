@@ -506,6 +506,12 @@
   }
   .scanzone.has-image .overlay-label { opacity: 1; }
 
+  .mode-hint {
+    font-size: 0.78rem;
+    color: var(--ash-dim);
+    margin: 0.9rem 0 0;
+  }
+
   .check-row {
     display: flex; align-items: center; gap: 0.55rem;
     margin-top: 1rem; font-size: 0.82rem; color: var(--ash); cursor: pointer;
@@ -803,6 +809,16 @@
       <p>Two images in. A rendered likeness out.</p>
     </div>
 
+    <div class="panel reveal mode-toggle-panel">
+      <div class="panel-head"><h3>Mode</h3></div>
+      <div class="segmented">
+        <label><input type="radio" name="console-mode" value="tryon" checked /><span>Virtual try-on</span></label>
+        <label><input type="radio" name="console-mode" value="faceswap" /><span>Face swap</span></label>
+      </div>
+      <p class="mode-hint mono" id="mode-hint">Fits a garment onto your likeness — the full synthesis pipeline.</p>
+    </div>
+
+    <div id="mode-tryon">
     <div class="panel reveal">
       <div class="panel-head"><h3>Upload sources</h3><span class="tag">01 / 02</span></div>
       <div class="upload-grid">
@@ -858,6 +874,57 @@
         <img id="result-img" alt="Virtual try-on result" />
       </div>
       <div class="readout" id="readout"></div>
+    </div>
+    </div>
+
+    <div id="mode-faceswap" style="display:none;">
+      <div class="panel reveal">
+        <div class="panel-head"><h3>Upload sources</h3><span class="tag">01 / 01</span></div>
+        <div class="upload-grid">
+          <label class="scanzone" id="dz-fs-selfie">
+            <input type="file" id="input-fs-selfie" accept="image/*" />
+            <span class="bracket tl"></span><span class="bracket tr"></span><span class="bracket bl"></span><span class="bracket br"></span>
+            <img class="thumb" id="thumb-fs-selfie" />
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+            <span class="scan-label">Face source</span>
+            <span class="dz-text" id="text-fs-selfie"><strong>Upload a selfie</strong><br>Front-facing, good lighting</span>
+            <span class="overlay-label" id="overlay-fs-selfie"></span>
+          </label>
+
+          <label class="scanzone" id="dz-fs-base">
+            <input type="file" id="input-fs-base" accept="image/*" />
+            <span class="bracket tl"></span><span class="bracket tr"></span><span class="bracket bl"></span><span class="bracket br"></span>
+            <img class="thumb" id="thumb-fs-base" />
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-4 4-3-3-6 6"/></svg>
+            <span class="scan-label">Base image</span>
+            <span class="dz-text" id="text-fs-base"><strong>Upload the target photo</strong><br>Any photo — poster, on-model shot, template</span>
+            <span class="overlay-label" id="overlay-fs-base"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="panel reveal">
+        <div class="panel-head"><h3>Hair</h3><span class="tag">Optional</span></div>
+        <div class="segmented">
+          <label><input type="radio" name="hair-source" value="target" checked /><span>Base image's hair</span></label>
+          <label><input type="radio" name="hair-source" value="source" /><span>Your hair</span></label>
+        </div>
+      </div>
+
+      <div class="cta-row">
+        <button class="generate" id="btn-generate-fs">Generate face swap</button>
+        <span class="status" id="status-fs"></span>
+      </div>
+
+      <div class="result" id="result-fs">
+        <div class="result-tag"><span class="dot"></span>Swap complete</div>
+        <div class="result-frame">
+          <span class="bracket tl"></span><span class="bracket tr"></span><span class="bracket bl"></span><span class="bracket br"></span>
+          <div class="reveal-line" id="reveal-line-fs"></div>
+          <img id="result-img-fs" alt="Face swap result" />
+        </div>
+        <div class="readout" id="readout-fs"></div>
+      </div>
     </div>
   </section>
 
@@ -1116,7 +1183,7 @@
   }
 
   // ---------- Console logic (unchanged functional behavior) ----------
-  const state = { selfie: null, product: null };
+  const state = { selfie: null, product: null, 'fs-selfie': null, 'fs-base': null };
 
   function wireDropzone(key, dzId, inputId, thumbId, textId) {
     const dz = document.getElementById(dzId);
@@ -1142,6 +1209,28 @@
 
   wireDropzone('selfie', 'dz-selfie', 'input-selfie', 'thumb-selfie', 'text-selfie');
   wireDropzone('product', 'dz-product', 'input-product', 'thumb-product', 'text-product');
+  wireDropzone('fs-selfie', 'dz-fs-selfie', 'input-fs-selfie', 'thumb-fs-selfie', 'text-fs-selfie');
+  wireDropzone('fs-base', 'dz-fs-base', 'input-fs-base', 'thumb-fs-base', 'text-fs-base');
+
+  // ---------- Console mode toggle (try-on vs. standalone face swap) ----------
+  const modeTryon = document.getElementById('mode-tryon');
+  const modeFaceswap = document.getElementById('mode-faceswap');
+  const modeHint = document.getElementById('mode-hint');
+  document.querySelectorAll('input[name="console-mode"]').forEach((radio) => {
+    radio.addEventListener('change', () => {
+      const isTryon = radio.value === 'tryon' && radio.checked;
+      if (!radio.checked) return;
+      if (radio.value === 'tryon') {
+        modeTryon.style.display = '';
+        modeFaceswap.style.display = 'none';
+        modeHint.textContent = 'Fits a garment onto your likeness — the full synthesis pipeline.';
+      } else {
+        modeTryon.style.display = 'none';
+        modeFaceswap.style.display = '';
+        modeHint.textContent = 'Swaps your face directly onto any base image — no garment synthesis, just identity transfer.';
+      }
+    });
+  });
 
   const btn = document.getElementById('btn-generate');
   const statusEl = document.getElementById('status');
@@ -1217,6 +1306,73 @@
       statusEl.classList.add('err');
     } finally {
       btn.disabled = false;
+    }
+  });
+
+  // ---------- Standalone face swap ----------
+  const btnFs = document.getElementById('btn-generate-fs');
+  const statusFsEl = document.getElementById('status-fs');
+  const resultFsEl = document.getElementById('result-fs');
+  const resultFsImg = document.getElementById('result-img-fs');
+
+  btnFs.addEventListener('click', async () => {
+    if (!state['fs-selfie'] || !state['fs-base']) {
+      statusFsEl.textContent = 'Please upload both a selfie and a base image.';
+      statusFsEl.classList.add('err');
+      return;
+    }
+    statusFsEl.classList.remove('err');
+    btnFs.disabled = true;
+    resultFsEl.style.display = 'none';
+    statusFsEl.innerHTML = '<span class="spinner"></span>Swapping face — a few seconds…';
+
+    const form = new FormData();
+    form.append('selfie', state['fs-selfie']);
+    form.append('baseImage', state['fs-base']);
+    const hairSource = document.querySelector('input[name="hair-source"]:checked').value;
+    form.append('hairSource', hairSource);
+
+    try {
+      const res = await fetch('/api/faceswap', { method: 'POST', body: form });
+
+      let data;
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        throw new Error(
+          `Server returned an unexpected response (HTTP ${res.status}). Wait a few seconds and try again.` +
+          (text ? ` [${text.slice(0, 120)}]` : '')
+        );
+      }
+
+      if (!res.ok) throw new Error(data.error || 'Face swap failed');
+
+      resultFsImg.src = data.imageUrl;
+      resultFsEl.style.display = 'block';
+
+      const revealLineFs = document.getElementById('reveal-line-fs');
+      revealLineFs.style.animation = 'none';
+      void revealLineFs.offsetWidth;
+      revealLineFs.style.animation = '';
+
+      const readoutFs = document.getElementById('readout-fs');
+      const rows = [['Hair source', hairSource === 'source' ? 'YOUR HAIR' : 'BASE IMAGE']];
+      if (data.finalSizeBytes) {
+        rows.push(['Size', (data.finalSizeBytes / 1024 / 1024).toFixed(2) + ' MB']);
+      }
+      readoutFs.innerHTML = rows.map(([k, v]) =>
+        `<div><span class="k">${k}</span><span class="v ok">${v}</span></div>`
+      ).join('');
+
+      statusFsEl.textContent = data.storageWarning ? `Done — note: ${data.storageWarning}` : 'Done.';
+      if (data.storageWarning) statusFsEl.classList.add('err');
+    } catch (err) {
+      statusFsEl.textContent = err.message;
+      statusFsEl.classList.add('err');
+    } finally {
+      btnFs.disabled = false;
     }
   });
 </script>
