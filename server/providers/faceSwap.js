@@ -6,8 +6,11 @@
 // found"), not just a permissions error. Confirmed by visiting the page
 // directly, not assumed. Switched to codeplugtech/face-swap instead:
 //   - Confirmed to exist and actively used (2.4M+ runs)
-//   - Field names (swap_image, target_image) confirmed via independent
-//     sources, not guessed
+//   - Field names confirmed via a live 422 error, not just docs: swap_image
+//     was accepted, but "target_image" was rejected — the real field is
+//     input_image. (Sources describing this model as taking a "swap image"
+//     and "target/input image" were technically accurate but didn't state
+//     the literal field name clearly enough to avoid this guess.)
 //   - Cheaper (~$0.0064-0.0068/run vs. easel's ~$0.04/run)
 //   - Does NOT support a hair_source parameter — that was specific to
 //     Easel's model, so it's silently ignored here if passed
@@ -29,7 +32,7 @@ async function swapFace(replicate, { userFaceImage, targetImage }) {
   const output = await replicate.run(MODEL_VERSION, {
     input: {
       swap_image: userFaceImage, // the real selfie — source of the face
-      target_image: targetImage, // the photo to swap the face onto
+      input_image: targetImage, // the photo to swap the face onto (confirmed via live 422: NOT "target_image")
     },
   });
 
