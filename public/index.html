@@ -903,14 +903,6 @@
         </div>
       </div>
 
-      <div class="panel reveal">
-        <div class="panel-head"><h3>Hair</h3><span class="tag">Optional</span></div>
-        <div class="segmented">
-          <label><input type="radio" name="hair-source" value="target" checked /><span>Base image's hair</span></label>
-          <label><input type="radio" name="hair-source" value="source" /><span>Your hair</span></label>
-        </div>
-      </div>
-
       <div class="cta-row">
         <button class="generate" id="btn-generate-fs">Generate face swap</button>
         <span class="status" id="status-fs"></span>
@@ -1329,8 +1321,6 @@
     const form = new FormData();
     form.append('selfie', state['fs-selfie']);
     form.append('baseImage', state['fs-base']);
-    const hairSource = document.querySelector('input[name="hair-source"]:checked').value;
-    form.append('hairSource', hairSource);
 
     try {
       const res = await fetch('/api/faceswap', { method: 'POST', body: form });
@@ -1358,7 +1348,7 @@
       revealLineFs.style.animation = '';
 
       const readoutFs = document.getElementById('readout-fs');
-      const rows = [['Hair source', hairSource === 'source' ? 'YOUR HAIR' : 'BASE IMAGE']];
+      const rows = [];
       if (data.finalSizeBytes) {
         rows.push(['Size', (data.finalSizeBytes / 1024 / 1024).toFixed(2) + ' MB']);
       }

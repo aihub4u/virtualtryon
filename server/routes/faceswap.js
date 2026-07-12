@@ -69,9 +69,7 @@ router.post(
 
       const userFaceImage = fileToDataUri(selfieFile);
       const targetImage = fileToDataUri(baseImageFile);
-      const hairSource = req.body.hairSource === 'source' ? 'source' : 'target'; // keep base image's hair by default
-
-      const swappedUrl = await swapFace(replicate, { userFaceImage, targetImage, hairSource });
+      const swappedUrl = await swapFace(replicate, { userFaceImage, targetImage });
       if (!swappedUrl) {
         return res.status(502).json({ error: 'Face swap returned no output' });
       }
