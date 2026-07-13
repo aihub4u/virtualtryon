@@ -1275,7 +1275,7 @@
       const rows = [];
       rows.push(['Mode', mode.toUpperCase()]);
       if (data.upscaled !== null && data.upscaled !== undefined) {
-        rows.push(['Upscaled', data.upscaled ? 'YES · 8MP' : 'NO']);
+        rows.push(['Upscaled', data.upscaled ? 'YES · 4MP' : 'NO']);
       }
       if (data.finalSizeBytes) {
         rows.push(['Size', (data.finalSizeBytes / 1024 / 1024).toFixed(2) + ' MB']);

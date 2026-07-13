@@ -28,13 +28,22 @@ const sharp = require('sharp');
 const OVERLAP_RATIO = 0.08; // how much the two crops overlap around the midpoint
 
 /**
- * garmentInput: a data:image/...;base64,... string.
+ * garmentInput: a data:image/...;base64,... string OR a plain https URL
+ * (the garment cleanup step in lib/garmentCleanup.js returns a URL, not a
+ * data URI, so this needs to handle both).
  * Returns { topDataUri, bottomDataUri }.
  */
 async function splitGarmentTopBottom(garmentInput) {
-  const match = garmentInput.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
-  if (!match) throw new Error('splitGarmentTopBottom expects a data URI input');
-  const buffer = Buffer.from(match[2], 'base64');
+  let buffer;
+  if (garmentInput.startsWith('data:')) {
+    const match = garmentInput.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
+    if (!match) throw new Error('Could not parse data URI garment input');
+    buffer = Buffer.from(match[2], 'base64');
+  } else {
+    const res = await fetch(garmentInput);
+    if (!res.ok) throw new Error(`Failed to download garment image (${res.status})`);
+    buffer = Buffer.from(await res.arrayBuffer());
+  }
 
   const image = sharp(buffer);
   const metadata = await image.metadata();

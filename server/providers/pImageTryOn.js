@@ -35,6 +35,7 @@ const Replicate = require('replicate');
 const { randomUUID } = require('crypto');
 const { detectFullBody } = require('../lib/poseDetection');
 const { classifyGarment } = require('../lib/garmentClassify');
+const { cleanupGarmentImage } = require('../lib/garmentCleanup');
 const { looksAnatomicallyNormal } = require('../lib/anatomyCheck');
 const { enforceMaxSize, DEFAULT_MAX_BYTES } = require('../lib/imageSizeLimit');
 const { splitGarmentTopBottom } = require('../lib/garmentSplit');
@@ -85,7 +86,7 @@ async function runUpscale(replicate, imageUrl) {
       input: {
         image: imageUrl,
         upscale_mode: 'target',
-        target: 8, // max supported megapixels
+        target: 4, // megapixels — Pruna's pricing has a 1-4MP tier at $0.005 and a 4-8MP tier at $0.01; 4MP is plenty for web/product display at half the cost of the previous 8MP setting
         enhance_details: true,
         enhance_realism: true,
         output_format: 'jpg',
@@ -131,18 +132,35 @@ async function runTryOn({ modelImage, garmentImage, turbo }) {
   // This has to be automatic, not UI-driven, because this endpoint gets
   // called from channels with no UI at all (WhatsApp bots, other
   // integrations). See lib/garmentClassify.js for what this replaced and why.
+  // Runs BEFORE cleanup (cheap, $0.0016) so cleanup can be skipped entirely
+  // for garments that don't need it — see below.
   let garmentClassification = 'simple';
   const classifyEnabled = process.env.ENABLE_GARMENT_CLASSIFY !== 'false';
   if (classifyEnabled) {
     garmentClassification = await withRetry('garment-classify', () => classifyGarment(replicate, garmentImage));
   }
 
-  let garmentImages = [garmentImage];
+  // Strip the person/limbs out of the garment reference photo — confirmed
+  // root cause of an extra-limb artifact in production, but ONLY confirmed
+  // for the one-piece path, where the same garment image gets sent TWICE
+  // (duplicate technique below). Two-piece uses cropped regions, not
+  // duplication, and simple garments send a single reference — neither has
+  // the confirmed risk, so this $0.01 step is skipped for those, cutting
+  // cost for the majority of requests. See lib/garmentCleanup.js.
+  let cleanedGarmentImage = garmentImage;
+  let garmentCleaned = false;
+  const cleanupEnabled = process.env.ENABLE_GARMENT_CLEANUP !== 'false';
+  if (cleanupEnabled && garmentClassification === 'one-piece') {
+    cleanedGarmentImage = await withRetry('garment-cleanup', () => cleanupGarmentImage(replicate, garmentImage));
+    garmentCleaned = cleanedGarmentImage !== garmentImage;
+  }
+
+  let garmentImages = [cleanedGarmentImage];
   if (garmentClassification === 'two-piece') {
     // Genuinely separate garments (blazer + trousers, top + skirt) — split
     // into top/bottom crops, each a coherent standalone item.
     try {
-      const { topDataUri, bottomDataUri } = await splitGarmentTopBottom(garmentImage);
+      const { topDataUri, bottomDataUri } = await splitGarmentTopBottom(cleanedGarmentImage);
       garmentImages = [topDataUri, bottomDataUri];
       console.log('Two-piece garment detected — split into top/bottom crops');
     } catch (err) {
@@ -160,37 +178,40 @@ async function runTryOn({ modelImage, garmentImage, turbo }) {
     // chance of anatomical artifacts (a confirmed real case produced three
     // hands) — see the anatomy check + retry logic below, added
     // specifically to catch this.
-    garmentImages = [garmentImage, garmentImage];
+    garmentImages = [cleanedGarmentImage, cleanedGarmentImage];
     console.log('One-piece draped garment detected — sending as duplicate full-image references, not split');
   }
 
   let imageUrl = await runPImageTryOn(replicate, modelImage, garmentImages, turbo);
 
-  // Anatomy sanity check + retry — specifically for the one-piece path,
-  // since that's the one confirmed to occasionally produce artifacts (see
-  // lib/anatomyCheck.js header for the real case this was built from).
-  // Diffusion outputs are stochastic, so a retry is a genuinely different
-  // attempt, not a no-op. Capped at one retry to bound the extra cost.
+  // Anatomy sanity check — specifically for the one-piece path, since
+  // that's the one confirmed to occasionally produce artifacts (see
+  // lib/anatomyCheck.js header for the real case this was built from). The
+  // check itself is cheap ($0.0016) and stays on by default just to surface
+  // a warning. The automatic RETRY (a full extra generation, ~$0.023) is
+  // opt-in via ENABLE_ANATOMY_RETRY — off by default to keep typical cost
+  // down; the check still tells you about the problem either way.
   let anatomyWarning = null;
   const anatomyCheckEnabled = process.env.ENABLE_ANATOMY_CHECK !== 'false';
+  const anatomyRetryEnabled = process.env.ENABLE_ANATOMY_RETRY === 'true';
   if (anatomyCheckEnabled && garmentClassification === 'one-piece') {
     try {
       const looksNormal = await withRetry('anatomy-check', () => looksAnatomicallyNormal(replicate, imageUrl));
       if (!looksNormal) {
-        console.log('Anatomy check failed (likely extra/malformed limbs) — retrying generation once');
-        const retryUrl = await runPImageTryOn(replicate, modelImage, garmentImages, turbo);
-        const retryLooksNormal = await withRetry('anatomy-check-retry', () =>
-          looksAnatomicallyNormal(replicate, retryUrl)
-        );
-        if (retryLooksNormal) {
+        if (anatomyRetryEnabled) {
+          console.log('Anatomy check failed (likely extra/malformed limbs) — retrying generation once');
+          const retryUrl = await runPImageTryOn(replicate, modelImage, garmentImages, turbo);
+          const retryLooksNormal = await withRetry('anatomy-check-retry', () =>
+            looksAnatomicallyNormal(replicate, retryUrl)
+          );
           imageUrl = retryUrl;
+          if (!retryLooksNormal) {
+            anatomyWarning =
+              'This result may contain a rendering artifact (e.g. extra or malformed limbs) — a retry was attempted but the issue may persist. Regenerating again is worth trying.';
+          }
         } else {
-          // Both attempts looked off — use the retry anyway (as good a
-          // chance as the first) but flag it clearly rather than silently
-          // hoping for the best.
-          imageUrl = retryUrl;
           anatomyWarning =
-            'This result may contain a rendering artifact (e.g. extra or malformed limbs) — a retry was attempted but the issue may persist. Regenerating again is worth trying.';
+            'This result may contain a rendering artifact (e.g. extra or malformed limbs), common with this garment type. Regenerating is worth trying — outputs are not deterministic.';
         }
       }
     } catch (err) {
@@ -201,7 +222,14 @@ async function runTryOn({ modelImage, garmentImage, turbo }) {
   let upscaled = false;
   let upscaleWarning = null;
 
-  const shouldUpscale = process.env.UPSCALE_TRYON_RESULT !== 'false';
+  // Off by default now — the biggest single cost lever ($0.005-0.01/request
+  // always-on). Worth remembering: a lot of the original "blurry output"
+  // debugging earlier in this project turned out to be the credit-throttle
+  // silently killing this step and falling back to raw output anyway, not
+  // an inherent quality problem with the base model. Set
+  // UPSCALE_TRYON_RESULT=true to re-enable if raw quality isn't good enough
+  // for your use case.
+  const shouldUpscale = process.env.UPSCALE_TRYON_RESULT === 'true';
   if (shouldUpscale) {
     try {
       const upscaledOutput = await runUpscale(replicate, imageUrl);
@@ -257,7 +285,7 @@ async function runTryOn({ modelImage, garmentImage, turbo }) {
     }
   }
 
-  return { imageUrl: finalUrl, upscaled, upscaleWarning, bodyDetection, garmentClassification, anatomyWarning, finalSizeBytes, storageWarning };
+  return { imageUrl: finalUrl, upscaled, upscaleWarning, bodyDetection, garmentClassification, garmentCleaned, anatomyWarning, finalSizeBytes, storageWarning };
 }
 
 module.exports = { runTryOn };
