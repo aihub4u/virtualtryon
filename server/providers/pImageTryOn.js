@@ -35,6 +35,7 @@ const Replicate = require('replicate');
 const { randomUUID } = require('crypto');
 const { detectFullBody } = require('../lib/poseDetection');
 const { classifyGarment } = require('../lib/garmentClassify');
+const { looksAnatomicallyNormal } = require('../lib/anatomyCheck');
 const { enforceMaxSize, DEFAULT_MAX_BYTES } = require('../lib/imageSizeLimit');
 const { splitGarmentTopBottom } = require('../lib/garmentSplit');
 const { uploadBuffer } = require('../lib/storage');
@@ -152,21 +153,51 @@ async function runTryOn({ modelImage, garmentImage, turbo }) {
     // DO NOT split this — a "bottom crop" of a continuous drape is a
     // meaningless fabric fragment, not a wearable garment (this is exactly
     // what broke on a real saree earlier). Instead, this sends the SAME
-    // full image as two garment_images entries — an experimental attempt to
-    // encourage fuller-body coverage by giving the model multiple full
-    // references, since there's no confirmed API parameter to explicitly
-    // request "one-piece, full-body" handling from this model (checked
-    // Pruna's own docs — unlike their other models, p-image-try-on doesn't
-    // have a published parameter reference). This is a heuristic, not a
-    // guaranteed fix — if results are still incomplete for one-piece
-    // garments after this, the model likely just doesn't reliably support
-    // full-body drapes, and a different base model would be needed for
-    // that garment category specifically.
+    // full image as two garment_images entries. CONFIRMED WORKING in
+    // production for full-body coverage on a real saree (previously the
+    // garment only covered the torso, leaving original clothing visible
+    // below). Trade-off: this technique is also linked to an increased
+    // chance of anatomical artifacts (a confirmed real case produced three
+    // hands) — see the anatomy check + retry logic below, added
+    // specifically to catch this.
     garmentImages = [garmentImage, garmentImage];
     console.log('One-piece draped garment detected — sending as duplicate full-image references, not split');
   }
 
   let imageUrl = await runPImageTryOn(replicate, modelImage, garmentImages, turbo);
+
+  // Anatomy sanity check + retry — specifically for the one-piece path,
+  // since that's the one confirmed to occasionally produce artifacts (see
+  // lib/anatomyCheck.js header for the real case this was built from).
+  // Diffusion outputs are stochastic, so a retry is a genuinely different
+  // attempt, not a no-op. Capped at one retry to bound the extra cost.
+  let anatomyWarning = null;
+  const anatomyCheckEnabled = process.env.ENABLE_ANATOMY_CHECK !== 'false';
+  if (anatomyCheckEnabled && garmentClassification === 'one-piece') {
+    try {
+      const looksNormal = await withRetry('anatomy-check', () => looksAnatomicallyNormal(replicate, imageUrl));
+      if (!looksNormal) {
+        console.log('Anatomy check failed (likely extra/malformed limbs) — retrying generation once');
+        const retryUrl = await runPImageTryOn(replicate, modelImage, garmentImages, turbo);
+        const retryLooksNormal = await withRetry('anatomy-check-retry', () =>
+          looksAnatomicallyNormal(replicate, retryUrl)
+        );
+        if (retryLooksNormal) {
+          imageUrl = retryUrl;
+        } else {
+          // Both attempts looked off — use the retry anyway (as good a
+          // chance as the first) but flag it clearly rather than silently
+          // hoping for the best.
+          imageUrl = retryUrl;
+          anatomyWarning =
+            'This result may contain a rendering artifact (e.g. extra or malformed limbs) — a retry was attempted but the issue may persist. Regenerating again is worth trying.';
+        }
+      }
+    } catch (err) {
+      console.error('Anatomy check step failed, skipping it for this request:', err.message);
+    }
+  }
+
   let upscaled = false;
   let upscaleWarning = null;
 
@@ -226,7 +257,7 @@ async function runTryOn({ modelImage, garmentImage, turbo }) {
     }
   }
 
-  return { imageUrl: finalUrl, upscaled, upscaleWarning, bodyDetection, garmentClassification, finalSizeBytes, storageWarning };
+  return { imageUrl: finalUrl, upscaled, upscaleWarning, bodyDetection, garmentClassification, anatomyWarning, finalSizeBytes, storageWarning };
 }
 
 module.exports = { runTryOn };

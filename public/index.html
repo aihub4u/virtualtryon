@@ -1290,8 +1290,9 @@
         `<div><span class="k">${k}</span><span class="v ok">${v}</span></div>`
       ).join('');
 
-      statusEl.textContent = data.upscaleWarning ? `Done — note: ${data.upscaleWarning}` : 'Done.';
-      if (data.upscaleWarning) statusEl.classList.add('err');
+      const warning = data.anatomyWarning || data.upscaleWarning;
+      statusEl.textContent = warning ? `Done — note: ${warning}` : 'Done.';
+      if (warning) statusEl.classList.add('err');
     } catch (err) {
       statusEl.textContent = err.message;
       statusEl.classList.add('err');

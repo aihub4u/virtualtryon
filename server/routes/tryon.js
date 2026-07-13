@@ -91,6 +91,7 @@ router.post(
         upscaleWarning: result.upscaleWarning ?? null,
         bodyDetection: result.bodyDetection ?? null,
         garmentClassification: result.garmentClassification ?? null,
+        anatomyWarning: result.anatomyWarning ?? null,
         finalSizeBytes: result.finalSizeBytes ?? null,
         storageWarning: result.storageWarning ?? null,
       });
