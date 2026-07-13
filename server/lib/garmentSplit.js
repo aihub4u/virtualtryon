@@ -12,6 +12,16 @@
 // frame roughly in half with a little overlap so both crops still show
 // enough context (waistband, jacket hem) for the try-on model to align
 // each piece naturally.
+//
+// ONLY CALL THIS FOR GENUINELY TWO-PIECE OUTFITS. Confirmed broken in
+// production on a saree: splitting a one-piece draped garment (saree, gown,
+// kaftan, jumpsuit, kurta) produces a coherent top crop but a MEANINGLESS
+// bottom crop — just a fragment of continuous fabric mid-drape, not a
+// standalone garment. The model can't apply that convincingly, and the
+// person's original clothing shows through underneath in the result. For
+// one-piece garments, send the whole photo as a single garment_images
+// entry instead (skip this function entirely) and let the model treat it
+// as one continuous piece, same as it would a dress.
 
 const sharp = require('sharp');
 

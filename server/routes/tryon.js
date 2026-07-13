@@ -71,7 +71,6 @@ router.post(
 
       const category = req.body.category || undefined; // "tops" | "bottoms" | "one-pieces" (self-hosted provider only)
       const turbo = req.body.turbo === 'true'; // p-image-try-on only: true = faster/lower fidelity, false = quality mode
-      const fullOutfit = req.body.fullOutfit === 'true'; // true = product photo shows both top+bottom (suit, co-ord set) — split and send both
 
       const result = await providerModule.runTryOn({
         modelImage,
@@ -79,7 +78,6 @@ router.post(
         garmentDescription,
         category,
         turbo,
-        fullOutfit,
       });
 
       if (!result.imageUrl) {
@@ -92,6 +90,7 @@ router.post(
         upscaled: result.upscaled ?? null,
         upscaleWarning: result.upscaleWarning ?? null,
         bodyDetection: result.bodyDetection ?? null,
+        garmentClassification: result.garmentClassification ?? null,
         finalSizeBytes: result.finalSizeBytes ?? null,
         storageWarning: result.storageWarning ?? null,
       });

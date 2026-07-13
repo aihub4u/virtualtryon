@@ -34,6 +34,7 @@
 const Replicate = require('replicate');
 const { randomUUID } = require('crypto');
 const { detectFullBody } = require('../lib/poseDetection');
+const { classifyGarment } = require('../lib/garmentClassify');
 const { enforceMaxSize, DEFAULT_MAX_BYTES } = require('../lib/imageSizeLimit');
 const { splitGarmentTopBottom } = require('../lib/garmentSplit');
 const { uploadBuffer } = require('../lib/storage');
@@ -93,7 +94,7 @@ async function runUpscale(replicate, imageUrl) {
   );
 }
 
-async function runTryOn({ modelImage, garmentImage, turbo, fullOutfit }) {
+async function runTryOn({ modelImage, garmentImage, turbo }) {
   const apiToken = process.env.REPLICATE_API_TOKEN;
   if (!apiToken) throw new Error('REPLICATE_API_TOKEN is not set');
 
@@ -125,16 +126,44 @@ async function runTryOn({ modelImage, garmentImage, turbo, fullOutfit }) {
     }
   }
 
-  // Body check passed (or is disabled) — proceed with generation.
+  // Automatically classify the garment's structure — no manual checkbox.
+  // This has to be automatic, not UI-driven, because this endpoint gets
+  // called from channels with no UI at all (WhatsApp bots, other
+  // integrations). See lib/garmentClassify.js for what this replaced and why.
+  let garmentClassification = 'simple';
+  const classifyEnabled = process.env.ENABLE_GARMENT_CLASSIFY !== 'false';
+  if (classifyEnabled) {
+    garmentClassification = await withRetry('garment-classify', () => classifyGarment(replicate, garmentImage));
+  }
+
   let garmentImages = [garmentImage];
-  if (fullOutfit) {
+  if (garmentClassification === 'two-piece') {
+    // Genuinely separate garments (blazer + trousers, top + skirt) — split
+    // into top/bottom crops, each a coherent standalone item.
     try {
       const { topDataUri, bottomDataUri } = await splitGarmentTopBottom(garmentImage);
       garmentImages = [topDataUri, bottomDataUri];
-      console.log('Full-outfit mode: split garment photo into top/bottom crops');
+      console.log('Two-piece garment detected — split into top/bottom crops');
     } catch (err) {
       console.error('Garment split failed, falling back to single full-frame garment image:', err.message);
     }
+  } else if (garmentClassification === 'one-piece') {
+    // A continuous draped garment (saree, gown, kaftan, jumpsuit, kurta).
+    // DO NOT split this — a "bottom crop" of a continuous drape is a
+    // meaningless fabric fragment, not a wearable garment (this is exactly
+    // what broke on a real saree earlier). Instead, this sends the SAME
+    // full image as two garment_images entries — an experimental attempt to
+    // encourage fuller-body coverage by giving the model multiple full
+    // references, since there's no confirmed API parameter to explicitly
+    // request "one-piece, full-body" handling from this model (checked
+    // Pruna's own docs — unlike their other models, p-image-try-on doesn't
+    // have a published parameter reference). This is a heuristic, not a
+    // guaranteed fix — if results are still incomplete for one-piece
+    // garments after this, the model likely just doesn't reliably support
+    // full-body drapes, and a different base model would be needed for
+    // that garment category specifically.
+    garmentImages = [garmentImage, garmentImage];
+    console.log('One-piece draped garment detected — sending as duplicate full-image references, not split');
   }
 
   let imageUrl = await runPImageTryOn(replicate, modelImage, garmentImages, turbo);
@@ -197,7 +226,7 @@ async function runTryOn({ modelImage, garmentImage, turbo, fullOutfit }) {
     }
   }
 
-  return { imageUrl: finalUrl, upscaled, upscaleWarning, bodyDetection, finalSizeBytes, storageWarning };
+  return { imageUrl: finalUrl, upscaled, upscaleWarning, bodyDetection, garmentClassification, finalSizeBytes, storageWarning };
 }
 
 module.exports = { runTryOn };

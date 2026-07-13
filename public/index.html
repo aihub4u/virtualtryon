@@ -842,10 +842,7 @@
           <span class="overlay-label" id="overlay-product"></span>
         </label>
       </div>
-      <label class="check-row">
-        <input type="checkbox" id="full-outfit" />
-        This photo shows a full outfit (e.g. suit, co-ord set) — apply both top and bottom
-      </label>
+      <p class="mode-hint mono">Garment structure (single item, two-piece, or one-piece drape) is detected automatically — no need to flag it.</p>
     </div>
 
     <div class="panel reveal">
@@ -1247,7 +1244,6 @@
     if (desc) form.append('description', desc);
     const mode = document.querySelector('input[name="mode"]:checked').value;
     form.append('turbo', mode === 'turbo' ? 'true' : 'false');
-    form.append('fullOutfit', document.getElementById('full-outfit').checked ? 'true' : 'false');
 
     try {
       const res = await fetch('/api/tryon', { method: 'POST', body: form });
@@ -1286,6 +1282,9 @@
       }
       if (data.bodyDetection) {
         rows.push(['Scan', data.bodyDetection.fullBodyDetected ? 'FULL BODY' : 'FACE ONLY']);
+      }
+      if (data.garmentClassification) {
+        rows.push(['Garment', data.garmentClassification.toUpperCase().replace('-', ' ')]);
       }
       readout.innerHTML = rows.map(([k, v]) =>
         `<div><span class="k">${k}</span><span class="v ok">${v}</span></div>`
