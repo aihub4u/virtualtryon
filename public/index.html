@@ -1235,7 +1235,7 @@
     statusEl.classList.remove('err');
     btn.disabled = true;
     resultEl.style.display = 'none';
-    statusEl.innerHTML = '<span class="spinner"></span>Rendering composite — 10 to 60s…';
+    statusEl.innerHTML = '<span class="spinner"></span>Rendering composite — usually 10-60s, occasionally longer on a cold start…';
 
     const form = new FormData();
     form.append('selfie', state.selfie);
@@ -1246,7 +1246,20 @@
     form.append('turbo', mode === 'turbo' ? 'true' : 'false');
 
     try {
-      const res = await fetch('/api/tryon', { method: 'POST', body: form });
+      // A client-side timeout so a stuck backend fails visibly instead of
+      // spinning forever. Set generously (4.5 min) to cover the worst case
+      // now that automatic fallback exists server-side: primary provider
+      // can take up to 2.5 min before the server gives up on it (covers a
+      // genuine cold start), then the fallback provider gets its own
+      // attempt on top of that.
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 270000); // 4.5 minutes
+      let res;
+      try {
+        res = await fetch('/api/tryon', { method: 'POST', body: form, signal: controller.signal });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       let data;
       const contentType = res.headers.get('content-type') || '';
@@ -1274,6 +1287,9 @@
       const readout = document.getElementById('readout');
       const rows = [];
       rows.push(['Mode', mode.toUpperCase()]);
+      if (data.usedFallback) {
+        rows.push(['Provider', (data.provider || 'FALLBACK').toUpperCase() + ' (BACKUP)']);
+      }
       if (data.upscaled !== null && data.upscaled !== undefined) {
         rows.push(['Upscaled', data.upscaled ? 'YES · 4MP' : 'NO']);
       }
@@ -1294,7 +1310,9 @@
       statusEl.textContent = warning ? `Done — note: ${warning}` : 'Done.';
       if (warning) statusEl.classList.add('err');
     } catch (err) {
-      statusEl.textContent = err.message;
+      statusEl.textContent = err.name === 'AbortError'
+        ? 'This is taking much longer than usual (3+ minutes) and was cancelled. Usually this is a model "cold start" on Replicate\'s side (the first request after a quiet period can take a while to boot) — try again now, it should be fast this time. If it happens repeatedly, check Render logs for 429 rate-limit errors instead.'
+        : err.message;
       statusEl.classList.add('err');
     } finally {
       btn.disabled = false;

@@ -21,6 +21,23 @@ function fileToDataUri(file) {
   return `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
 }
 
+function getProviderModule(name) {
+  if (name === 'p-image-try-on') return require('../providers/pImageTryOn');
+  if (name === 'fashn') return require('../providers/fashn');
+  if (name === 'idm-vton') return require('../providers/idmVton');
+  if (name === 'fashn-selfhosted') return require('../providers/fashnVtonSelfHosted');
+  if (name === 'nano-banana') return require('../providers/nanoBanana');
+  return null;
+}
+
+function withTimeout(promise, ms, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms / 1000}s`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 router.post(
   '/',
   (req, res, next) => {
@@ -55,30 +72,72 @@ router.post(
       const garmentImage = fileToDataUri(productFile);
       const garmentDescription = req.body.description || undefined;
 
-      const provider = (process.env.TRYON_PROVIDER || 'p-image-try-on').toLowerCase();
-      let providerModule;
-      if (provider === 'p-image-try-on') {
-        providerModule = require('../providers/pImageTryOn');
-      } else if (provider === 'fashn') {
-        providerModule = require('../providers/fashn');
-      } else if (provider === 'idm-vton') {
-        providerModule = require('../providers/idmVton');
-      } else if (provider === 'fashn-selfhosted') {
-        providerModule = require('../providers/fashnVtonSelfHosted');
-      } else {
-        return res.status(500).json({ error: `Unknown TRYON_PROVIDER "${provider}"` });
+      const primaryProviderName = (process.env.TRYON_PROVIDER || 'p-image-try-on').toLowerCase();
+      const providerModule = getProviderModule(primaryProviderName);
+      if (!providerModule) {
+        return res.status(500).json({ error: `Unknown TRYON_PROVIDER "${primaryProviderName}"` });
       }
 
       const category = req.body.category || undefined; // "tops" | "bottoms" | "one-pieces" (self-hosted provider only)
       const turbo = req.body.turbo === 'true'; // p-image-try-on only: true = faster/lower fidelity, false = quality mode
 
-      const result = await providerModule.runTryOn({
-        modelImage,
-        garmentImage,
-        garmentDescription,
-        category,
-        turbo,
-      });
+      // How long to wait on the primary provider before treating it as
+      // failed and trying the fallback — generous enough to cover a normal
+      // cold start (confirmed to take up to ~2-3 min on Replicate's shared
+      // "Official" model infrastructure), but not so long the user just
+      // gives up waiting instead of getting a fallback result.
+      const PRIMARY_TIMEOUT_MS = 150_000; // 2.5 minutes
+
+      let result;
+      let usedFallback = false;
+      let primaryError = null;
+
+      try {
+        result = await withTimeout(
+          providerModule.runTryOn({ modelImage, garmentImage, garmentDescription, category, turbo }),
+          PRIMARY_TIMEOUT_MS,
+          primaryProviderName
+        );
+      } catch (err) {
+        // A rejected/invalid INPUT (bad selfie) is not an infrastructure
+        // problem — retrying with a different provider won't fix a bad
+        // photo, so this always surfaces directly, never triggers fallback.
+        if (err.code === 'FULL_BODY_NOT_DETECTED') throw err;
+
+        // Genuine infrastructure-shaped failure (cold start timeout, 429s
+        // exhausted, Replicate outage, etc.) — try the backup provider
+        // instead of failing the whole request outright. Only attempts this
+        // if a distinct, configured fallback actually exists.
+        const fallbackProviderName = (process.env.TRYON_FALLBACK_PROVIDER || 'nano-banana').toLowerCase();
+        const fallbackKeyPresent =
+          fallbackProviderName === 'fashn' ? !!process.env.FASHN_API_KEY : !!process.env.REPLICATE_API_TOKEN;
+        const fallbackConfigured = fallbackProviderName !== primaryProviderName && fallbackKeyPresent;
+
+        if (!fallbackConfigured) {
+          throw err; // no usable fallback — surface the original error as before
+        }
+
+        console.error(
+          `Primary provider "${primaryProviderName}" failed (${err.message}) — trying fallback "${fallbackProviderName}"`
+        );
+        primaryError = err.message;
+
+        const fallbackModule = getProviderModule(fallbackProviderName);
+        try {
+          result = await withTimeout(
+            fallbackModule.runTryOn({ modelImage, garmentImage, garmentDescription }),
+            PRIMARY_TIMEOUT_MS,
+            fallbackProviderName
+          );
+          usedFallback = true;
+        } catch (fallbackErr) {
+          console.error(`Fallback provider "${fallbackProviderName}" also failed:`, fallbackErr.message);
+          const combined = new Error(
+            `Primary provider failed (${err.message}), and the fallback also failed (${fallbackErr.message}).`
+          );
+          throw combined;
+        }
+      }
 
       if (!result.imageUrl) {
         return res.status(502).json({ error: 'Provider returned no image', raw: result.raw });
@@ -86,7 +145,9 @@ router.post(
 
       res.json({
         imageUrl: result.imageUrl,
-        provider,
+        provider: usedFallback ? (process.env.TRYON_FALLBACK_PROVIDER || 'nano-banana').toLowerCase() : primaryProviderName,
+        usedFallback,
+        primaryError,
         upscaled: result.upscaled ?? null,
         upscaleWarning: result.upscaleWarning ?? null,
         bodyDetection: result.bodyDetection ?? null,
