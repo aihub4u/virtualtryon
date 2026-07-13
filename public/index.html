@@ -820,7 +820,7 @@
 
     <div id="mode-tryon">
     <div class="panel reveal">
-      <div class="panel-head"><h3>Upload sources</h3><span class="tag">01 / 02</span></div>
+      <div class="panel-head"><h3>Upload sources</h3><span class="tag">01 / 03</span></div>
       <div class="upload-grid">
         <label class="scanzone" id="dz-selfie">
           <input type="file" id="input-selfie" accept="image/*" />
@@ -851,7 +851,17 @@
     </div>
 
     <div class="panel reveal">
-      <div class="panel-head"><h3>Render quality</h3><span class="tag">02 / 02</span></div>
+      <div class="panel-head"><h3>Model</h3><span class="tag">02 / 03</span></div>
+      <div class="segmented">
+        <label><input type="radio" name="model-select" value="p-image-try-on" checked /><span>Pruna</span></label>
+        <label><input type="radio" name="model-select" value="idm-vton" /><span>IDM-VTON</span></label>
+        <label><input type="radio" name="model-select" value="nano-banana" /><span>Nano Banana</span></label>
+      </div>
+      <p class="mode-hint mono" id="model-hint">Fast, cheap, commercial-safe (verify License tab). Full pipeline: body check, garment cleanup, upscale.</p>
+    </div>
+
+    <div class="panel reveal">
+      <div class="panel-head"><h3>Render quality</h3><span class="tag">03 / 03</span></div>
       <div class="segmented">
         <label><input type="radio" name="mode" value="quality" checked /><span>Quality</span></label>
         <label><input type="radio" name="mode" value="turbo" /><span>Turbo</span></label>
@@ -1221,6 +1231,18 @@
     });
   });
 
+  const MODEL_HINTS = {
+    'p-image-try-on': 'Fast, cheap, commercial-safe (verify License tab). Full pipeline: body check, garment cleanup, upscale.',
+    'idm-vton': 'Reportedly best-in-class quality — but NON-COMMERCIAL license. Testing/demo use only, not for paying customers.',
+    'nano-banana': 'Google\'s general-purpose editor, directed via prompt to do a try-on. Commercial-safe, but less consistent than a purpose-built model.',
+  };
+  document.querySelectorAll('input[name="model-select"]').forEach((radio) => {
+    radio.addEventListener('change', () => {
+      if (!radio.checked) return;
+      document.getElementById('model-hint').textContent = MODEL_HINTS[radio.value] || '';
+    });
+  });
+
   const btn = document.getElementById('btn-generate');
   const statusEl = document.getElementById('status');
   const resultEl = document.getElementById('result');
@@ -1244,6 +1266,8 @@
     if (desc) form.append('description', desc);
     const mode = document.querySelector('input[name="mode"]:checked').value;
     form.append('turbo', mode === 'turbo' ? 'true' : 'false');
+    const selectedModel = document.querySelector('input[name="model-select"]:checked').value;
+    form.append('selectedProvider', selectedModel);
 
     try {
       // A client-side timeout so a stuck backend fails visibly instead of
@@ -1287,9 +1311,10 @@
       const readout = document.getElementById('readout');
       const rows = [];
       rows.push(['Mode', mode.toUpperCase()]);
-      if (data.usedFallback) {
-        rows.push(['Provider', (data.provider || 'FALLBACK').toUpperCase() + ' (BACKUP)']);
+      if (data.provider) {
+        rows.push(['Model', data.provider.toUpperCase() + (data.usedFallback ? ' (BACKUP)' : '')]);
       }
+
       if (data.upscaled !== null && data.upscaled !== undefined) {
         rows.push(['Upscaled', data.upscaled ? 'YES · 4MP' : 'NO']);
       }

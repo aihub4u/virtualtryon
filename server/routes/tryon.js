@@ -72,10 +72,10 @@ router.post(
       const garmentImage = fileToDataUri(productFile);
       const garmentDescription = req.body.description || undefined;
 
-      const primaryProviderName = (process.env.TRYON_PROVIDER || 'p-image-try-on').toLowerCase();
+      const primaryProviderName = (req.body.selectedProvider || process.env.TRYON_PROVIDER || 'p-image-try-on').toLowerCase();
       const providerModule = getProviderModule(primaryProviderName);
       if (!providerModule) {
-        return res.status(500).json({ error: `Unknown TRYON_PROVIDER "${primaryProviderName}"` });
+        return res.status(500).json({ error: `Unknown provider "${primaryProviderName}"` });
       }
 
       const category = req.body.category || undefined; // "tops" | "bottoms" | "one-pieces" (self-hosted provider only)
