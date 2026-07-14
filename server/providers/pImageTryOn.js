@@ -96,14 +96,18 @@ async function runUpscale(replicate, imageUrl) {
   );
 }
 
-async function runTryOn({ modelImage, garmentImage, turbo }) {
+async function runTryOn({ modelImage, garmentImage, turbo, skipBodyCheck }) {
   const apiToken = process.env.REPLICATE_API_TOKEN;
   if (!apiToken) throw new Error('REPLICATE_API_TOKEN is not set');
 
   const replicate = new Replicate({ auth: apiToken });
 
   let bodyDetection = null;
-  const checkEnabled = process.env.ENABLE_BODY_CHECK !== 'false';
+  // Skippable two ways: the global ENABLE_BODY_CHECK env var (affects every
+  // request), or this specific request setting skipBodyCheck (the frontend
+  // "accept any image" filter — lets a user override it per-request instead
+  // of an operator disabling it site-wide).
+  const checkEnabled = process.env.ENABLE_BODY_CHECK !== 'false' && !skipBodyCheck;
 
   if (checkEnabled) {
     let detection;
@@ -126,6 +130,8 @@ async function runTryOn({ modelImage, garmentImage, turbo }) {
       err.bodyDetection = bodyDetection;
       throw err;
     }
+  } else if (skipBodyCheck) {
+    bodyDetection = { fullBodyDetected: null, reason: 'Body check skipped — "accept any image" filter enabled' };
   }
 
   // Automatically classify the garment's structure — no manual checkbox.

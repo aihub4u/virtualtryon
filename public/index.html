@@ -858,6 +858,10 @@
         <label><input type="radio" name="model-select" value="nano-banana" /><span>Nano Banana</span></label>
       </div>
       <p class="mode-hint mono" id="model-hint">Fast, cheap, commercial-safe (verify License tab). Full pipeline: body check, garment cleanup, upscale.</p>
+      <label class="check-row" id="skip-body-check-row">
+        <input type="checkbox" id="skip-body-check" />
+        Accept any image (skip the body-coverage filter — Pruna only)
+      </label>
     </div>
 
     <div class="panel reveal">
@@ -1236,10 +1240,14 @@
     'idm-vton': 'Reportedly best-in-class quality — but NON-COMMERCIAL license. Testing/demo use only, not for paying customers.',
     'nano-banana': 'Google\'s general-purpose editor, directed via prompt to do a try-on. Commercial-safe, but less consistent than a purpose-built model.',
   };
+  const skipBodyCheckRow = document.getElementById('skip-body-check-row');
   document.querySelectorAll('input[name="model-select"]').forEach((radio) => {
     radio.addEventListener('change', () => {
       if (!radio.checked) return;
       document.getElementById('model-hint').textContent = MODEL_HINTS[radio.value] || '';
+      // The filter only does anything for Pruna — hide it for other models
+      // rather than leave a checkbox visible that silently has no effect.
+      skipBodyCheckRow.style.display = radio.value === 'p-image-try-on' ? '' : 'none';
     });
   });
 
@@ -1268,6 +1276,7 @@
     form.append('turbo', mode === 'turbo' ? 'true' : 'false');
     const selectedModel = document.querySelector('input[name="model-select"]:checked').value;
     form.append('selectedProvider', selectedModel);
+    form.append('skipBodyCheck', document.getElementById('skip-body-check').checked ? 'true' : 'false');
 
     try {
       // A client-side timeout so a stuck backend fails visibly instead of
@@ -1322,7 +1331,13 @@
         rows.push(['Size', (data.finalSizeBytes / 1024 / 1024).toFixed(2) + ' MB']);
       }
       if (data.bodyDetection) {
-        rows.push(['Scan', data.bodyDetection.fullBodyDetected ? 'FULL BODY' : 'FACE ONLY']);
+        const scanValue =
+          data.bodyDetection.fullBodyDetected === null
+            ? 'SKIPPED (FILTER)'
+            : data.bodyDetection.fullBodyDetected
+              ? 'FULL BODY'
+              : 'FACE ONLY';
+        rows.push(['Scan', scanValue]);
       }
       if (data.garmentClassification) {
         rows.push(['Garment', data.garmentClassification.toUpperCase().replace('-', ' ')]);

@@ -80,6 +80,7 @@ router.post(
 
       const category = req.body.category || undefined; // "tops" | "bottoms" | "one-pieces" (self-hosted provider only)
       const turbo = req.body.turbo === 'true'; // p-image-try-on only: true = faster/lower fidelity, false = quality mode
+      const skipBodyCheck = req.body.skipBodyCheck === 'true'; // p-image-try-on only: "accept any image" filter — bypasses the body-coverage rejection
 
       // How long to wait on the primary provider before treating it as
       // failed and trying the fallback — generous enough to cover a normal
@@ -94,7 +95,7 @@ router.post(
 
       try {
         result = await withTimeout(
-          providerModule.runTryOn({ modelImage, garmentImage, garmentDescription, category, turbo }),
+          providerModule.runTryOn({ modelImage, garmentImage, garmentDescription, category, turbo, skipBodyCheck }),
           PRIMARY_TIMEOUT_MS,
           primaryProviderName
         );
@@ -105,13 +106,15 @@ router.post(
         if (err.code === 'FULL_BODY_NOT_DETECTED') throw err;
 
         // Genuine infrastructure-shaped failure (cold start timeout, 429s
-        // exhausted, Replicate outage, etc.) — try the backup provider
-        // instead of failing the whole request outright. Only attempts this
-        // if a distinct, configured fallback actually exists.
-        const fallbackProviderName = (process.env.TRYON_FALLBACK_PROVIDER || 'nano-banana').toLowerCase();
+        // exhausted, Replicate outage, etc.) — could try a backup provider
+        // instead of failing outright, but this is now OPT-IN ONLY: no
+        // default fallback (previously defaulted to nano-banana, removed
+        // per request — set TRYON_FALLBACK_PROVIDER explicitly to
+        // re-enable, e.g. "nano-banana" or "fashn").
+        const fallbackProviderName = (process.env.TRYON_FALLBACK_PROVIDER || '').toLowerCase();
         const fallbackKeyPresent =
           fallbackProviderName === 'fashn' ? !!process.env.FASHN_API_KEY : !!process.env.REPLICATE_API_TOKEN;
-        const fallbackConfigured = fallbackProviderName !== primaryProviderName && fallbackKeyPresent;
+        const fallbackConfigured = !!fallbackProviderName && fallbackProviderName !== primaryProviderName && fallbackKeyPresent;
 
         if (!fallbackConfigured) {
           throw err; // no usable fallback — surface the original error as before
@@ -145,7 +148,7 @@ router.post(
 
       res.json({
         imageUrl: result.imageUrl,
-        provider: usedFallback ? (process.env.TRYON_FALLBACK_PROVIDER || 'nano-banana').toLowerCase() : primaryProviderName,
+        provider: usedFallback ? (process.env.TRYON_FALLBACK_PROVIDER || '').toLowerCase() : primaryProviderName,
         usedFallback,
         primaryError,
         upscaled: result.upscaled ?? null,
