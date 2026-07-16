@@ -1,9 +1,23 @@
 // routes/jobs.js
+// POST creates a job and returns an ID immediately. GET fetches status and
+// (once ready) the result, using that ID. Built for callers where a
+// synchronous request that blocks for 10-60+ seconds isn't practical —
+// WhatsApp bots, other backend integrations, or a frontend that wants to
+// poll rather than hold one long connection open.
+//
+// Accepts the same options as the synchronous POST /api/tryon (model
+// selection, the Pruna-only "accept any image" filter, turbo mode,
+// description) — see queue/worker.js, which runs the actual pipeline via
+// the same provider modules /api/tryon uses, so this gets every fix
+// (body-check, garment classification, cleanup, anatomy-check, upscale)
+// automatically, with no risk of drifting out of sync with the
+// synchronous route the way an earlier version of this file did.
+
 const express = require('express');
 const { randomUUID } = require('crypto');
 const rateLimit = require('express-rate-limit');
 const jobStore = require('../lib/jobStore');
-const { enqueueStep } = require('../queue/queue');
+const { enqueueJob } = require('../queue/queue');
 
 const router = express.Router();
 
@@ -21,7 +35,7 @@ const createLimiter = rateLimit({
 
 router.post('/', createLimiter, async (req, res) => {
   try {
-    const { selfieUrl, garmentUrl, turbo } = req.body || {};
+    const { selfieUrl, garmentUrl, turbo, selectedProvider, skipBodyCheck, category, description } = req.body || {};
 
     if (!selfieUrl || !garmentUrl) {
       return res.status(400).json({ error: 'Both "selfieUrl" and "garmentUrl" are required.' });
@@ -30,7 +44,7 @@ router.post('/', createLimiter, async (req, res) => {
       new URL(selfieUrl);
       new URL(garmentUrl);
     } catch {
-      return res.status(400).json({ error: 'selfieUrl and garmentUrl must be valid URLs.' });
+      return res.status(400).json({ error: 'selfieUrl and garmentUrl must be valid, publicly-reachable URLs.' });
     }
 
     const id = randomUUID();
@@ -39,8 +53,12 @@ router.post('/', createLimiter, async (req, res) => {
       selfieUrl,
       garmentUrl,
       turbo: turbo ? 'true' : 'false',
+      selectedProvider: selectedProvider || '',
+      skipBodyCheck: skipBodyCheck ? 'true' : 'false',
+      category: category || '',
+      description: description || '',
     });
-    await enqueueStep(id, 'tryon');
+    await enqueueJob(id);
 
     res.status(202).json({
       id,
@@ -60,10 +78,41 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Job not found (it may have expired or never existed).' });
     }
 
+    // The full pipeline result (imageUrl + every diagnostic field —
+    // upscaled, bodyDetection, garmentClassification, anatomyWarning, etc.)
+    // is stored as one JSON blob by the worker, since Redis hash fields are
+    // flat strings, not nested objects.
+    let result = null;
+    if (job.resultJson) {
+      try {
+        result = JSON.parse(job.resultJson);
+      } catch (err) {
+        console.error(`Failed to parse resultJson for job ${req.params.id}:`, err.message);
+      }
+    }
+
+    let bodyDetection = result?.bodyDetection ?? null;
+    if (!bodyDetection && job.bodyDetectionJson) {
+      try {
+        bodyDetection = JSON.parse(job.bodyDetectionJson);
+      } catch {
+        // ignore — leave as null
+      }
+    }
+
     res.json({
       id: req.params.id,
       status: job.status,
-      imageUrl: job.resultUrl || null,
+      imageUrl: result?.imageUrl ?? null,
+      provider: job.provider || null,
+      upscaled: result?.upscaled ?? null,
+      upscaleWarning: result?.upscaleWarning ?? null,
+      bodyDetection,
+      garmentClassification: result?.garmentClassification ?? null,
+      garmentCleaned: result?.garmentCleaned ?? null,
+      anatomyWarning: result?.anatomyWarning ?? null,
+      finalSizeBytes: result?.finalSizeBytes ?? null,
+      storageWarning: result?.storageWarning ?? null,
       error: job.error || null,
     });
   } catch (err) {

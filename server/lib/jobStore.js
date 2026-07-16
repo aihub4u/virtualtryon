@@ -1,7 +1,11 @@
 // lib/jobStore.js
 // Job state lives in Redis as a hash: job:{id} -> { status, selfieUrl, ... }
-// A separate mapping predmap:{predictionId} -> jobId+step lets the webhook
-// handler figure out which job a completed Replicate prediction belongs to.
+//
+// mapPrediction/getPredictionMapping below are no longer used by anything —
+// they supported an earlier webhook-based worker design (see
+// queue/worker.js's header for why that was replaced). Left in place rather
+// than deleted in case a fire-and-forget/webhook design is wanted again for
+// very high-throughput scenarios later.
 //
 // TTLs exist so a campaign that generates millions of jobs doesn't leave
 // Redis growing forever — jobs and their prediction mappings expire after a

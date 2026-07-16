@@ -12,16 +12,10 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 
-// The async job pipeline (queue + webhooks) needs Redis. Only wire it up if
-// REDIS_URL is configured, so deployments using only the synchronous
-// /api/tryon flow don't need Redis at all.
+// The async job pipeline needs Redis. Only wire it up if REDIS_URL is
+// configured, so deployments using only the synchronous /api/tryon flow
+// don't need Redis at all.
 const asyncPipelineEnabled = !!process.env.REDIS_URL;
-if (asyncPipelineEnabled) {
-  const webhooksRoute = require('./routes/webhooks');
-  // Webhook route needs the RAW body for signature verification — must be
-  // mounted before express.json() below, or Replicate's signature check fails.
-  app.use('/api/webhooks', express.raw({ type: 'application/json' }), webhooksRoute);
-}
 
 app.use(express.json({ limit: '2mb' }));
 
@@ -41,7 +35,9 @@ app.use('/api/tryon', tryonRoute);
 app.use('/api/faceswap', faceswapRoute);
 
 // Async job-based flow (POST creates a job, GET polls it) — this is the one
-// built for scale: queue-backed, webhook-driven, safe for campaign traffic.
+// built for scale: queue-backed, safe for campaign traffic. Worker process
+// (queue/worker.js) runs separately and calls the same provider modules
+// /api/tryon uses, so it gets every pipeline feature automatically.
 if (asyncPipelineEnabled) {
   const jobsRoute = require('./routes/jobs');
   app.use('/api/jobs', jobsRoute);

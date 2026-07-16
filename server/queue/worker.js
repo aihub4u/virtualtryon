@@ -1,110 +1,106 @@
 // queue/worker.js
 // Run this as a SEPARATE process from the API server (separate Render
-// service, same repo). Its only job is to drain replicate-dispatch at a
-// controlled rate and fire off Replicate predictions with a webhook —
-// it does NOT wait for predictions to finish, so one small worker can
-// dispatch thousands of jobs without holding thousands of connections open.
+// service, same repo). Drains the job queue and actually runs each try-on.
 //
-// Rate limit: 5 dispatches/second = 300/minute, comfortably under
-// Replicate's 600/minute account-wide limit, leaving headroom for retries
-// and any other Replicate usage on the same account.
+// REWRITE NOTE: the original version of this file fired raw Replicate
+// predictions with a webhook callback, on the theory that predictions
+// should be dispatched without waiting so one small worker could handle
+// many jobs concurrently. That design predates most of this codebase's
+// actual try-on pipeline (body-coverage check, automatic garment
+// classification, garment cleanup, anatomy-check + retry, model selection,
+// automatic fallback) — all of which lives in providers/*.js and was never
+// wired into the old webhook-based worker, so the async job API was
+// silently missing every fix built into the synchronous /api/tryon route.
+//
+// This version calls the SAME provider modules routes/tryon.js uses,
+// awaiting the full result directly — replicate.run() (used throughout
+// providers/*.js) already blocks until the prediction completes, so there
+// was never actually a need for fire-and-forget + webhook complexity here.
+// This is simpler AND gets every pipeline feature for free, automatically,
+// forever (no more risk of the async path silently drifting out of sync
+// with the sync path again).
 
 require('dotenv').config();
 const { Worker } = require('bullmq');
-const Replicate = require('replicate');
 const { makeConnection } = require('./queue');
 const jobStore = require('../lib/jobStore');
 
-const replicate = new Replicate({ auth: process.env.REPLICATE_API_TOKEN });
-const WEBHOOK_URL = process.env.WEBHOOK_BASE_URL
-  ? `${process.env.WEBHOOK_BASE_URL.replace(/\/$/, '')}/api/webhooks/replicate`
-  : null;
-
-if (!WEBHOOK_URL) {
-  throw new Error(
-    'WEBHOOK_BASE_URL is not set — this must be your public API URL (e.g. https://your-app.onrender.com) so Replicate can call back.'
-  );
+function getProviderModule(name) {
+  if (name === 'p-image-try-on') return require('../providers/pImageTryOn');
+  if (name === 'fashn') return require('../providers/fashn');
+  if (name === 'idm-vton') return require('../providers/idmVton');
+  if (name === 'fashn-selfhosted') return require('../providers/fashnVtonSelfHosted');
+  if (name === 'nano-banana') return require('../providers/nanoBanana');
+  return null;
 }
 
-async function dispatchTryOn(job) {
-  const record = await jobStore.getJob(job.jobId);
-  if (!record) throw new Error(`Job ${job.jobId} not found — may have expired`);
+async function runJob(jobId) {
+  const record = await jobStore.getJob(jobId);
+  if (!record) throw new Error(`Job ${jobId} not found — may have expired`);
 
-  const prediction = await replicate.predictions.create({
-    model: 'prunaai/p-image-try-on',
-    input: {
-      person_image: record.selfieUrl,
-      garment_images: [record.garmentUrl],
-      turbo: record.turbo === 'true',
-    },
-    webhook: WEBHOOK_URL,
-    webhook_events_filter: ['completed'],
+  const providerName = (record.selectedProvider || process.env.TRYON_PROVIDER || 'p-image-try-on').toLowerCase();
+  const providerModule = getProviderModule(providerName);
+  if (!providerModule) throw new Error(`Unknown provider "${providerName}"`);
+
+  await jobStore.updateJob(jobId, { status: 'processing' });
+
+  const result = await providerModule.runTryOn({
+    modelImage: record.selfieUrl,
+    garmentImage: record.garmentUrl,
+    garmentDescription: record.description || undefined,
+    category: record.category || undefined,
+    turbo: record.turbo === 'true',
+    skipBodyCheck: record.skipBodyCheck === 'true',
   });
 
-  await jobStore.mapPrediction(prediction.id, job.jobId, 'tryon');
-  await jobStore.updateJob(job.jobId, {
-    status: 'tryon_processing',
-    tryonPredictionId: prediction.id,
-  });
-}
-
-async function dispatchUpscale(job) {
-  const record = await jobStore.getJob(job.jobId);
-  if (!record) throw new Error(`Job ${job.jobId} not found — may have expired`);
-  if (!record.tryonResultUrl) {
-    throw new Error(`Job ${job.jobId} has no tryonResultUrl to upscale`);
+  if (!result.imageUrl) {
+    throw new Error('Provider returned no image');
   }
 
-  const prediction = await replicate.predictions.create({
-    version: '7135ff723ecea89c0f67afcd51e4904904586e351093465bdc7beed45941b3e0', // prunaai/p-image-upscale
-    input: {
-      image: record.tryonResultUrl,
-      upscale_mode: 'target',
-      target: 4,
-      enhance_details: true,
-      enhance_realism: true,
-      output_format: 'jpg',
-      output_quality: 85,
-    },
-    webhook: WEBHOOK_URL,
-    webhook_events_filter: ['completed'],
-  });
-
-  await jobStore.mapPrediction(prediction.id, job.jobId, 'upscale');
-  await jobStore.updateJob(job.jobId, {
-    status: 'upscale_processing',
-    upscalePredictionId: prediction.id,
+  await jobStore.updateJob(jobId, {
+    status: 'completed',
+    provider: providerName,
+    resultJson: JSON.stringify(result),
   });
 }
 
 const worker = new Worker(
-  'replicate-dispatch',
+  'tryon-jobs',
   async (job) => {
-    if (job.name === 'tryon') {
-      await dispatchTryOn(job.data);
-    } else if (job.name === 'upscale') {
-      await dispatchUpscale(job.data);
-    } else {
-      throw new Error(`Unknown job step: ${job.name}`);
+    try {
+      await runJob(job.data.jobId);
+    } catch (err) {
+      // A rejected input (e.g. no body detected) is a real, permanent
+      // result — not a transient failure BullMQ should retry. Mark it
+      // failed immediately with the specific reason rather than burning
+      // retry attempts on something that will never succeed.
+      if (err.code === 'FULL_BODY_NOT_DETECTED') {
+        await jobStore.updateJob(job.data.jobId, {
+          status: 'failed',
+          error: err.message,
+          bodyDetectionJson: JSON.stringify(err.bodyDetection || null),
+        });
+        return; // don't rethrow — this isn't a job-processing failure to retry
+      }
+      throw err; // genuine failure — let BullMQ's retry/backoff handle it
     }
   },
   {
     connection: makeConnection(),
-    limiter: { max: 5, duration: 1000 }, // 5/sec = 300/min dispatch rate
-    concurrency: 10,
+    concurrency: 5, // how many jobs this worker processes in parallel
   }
 );
 
 worker.on('failed', async (job, err) => {
-  console.error(`Job ${job?.data?.jobId} step "${job?.name}" failed:`, err.message);
-  if (job?.attemptsMade >= (job?.opts?.attempts || 1)) {
+  console.error(`Job ${job?.data?.jobId} failed:`, err.message);
+  if (job && job.attemptsMade >= (job.opts?.attempts || 1)) {
     // Exhausted retries — mark the job as failed so GET /api/jobs/:id reflects it.
     await jobStore.updateJob(job.data.jobId, { status: 'failed', error: err.message }).catch(() => {});
   }
 });
 
 worker.on('completed', (job) => {
-  console.log(`Dispatched ${job.name} for job ${job.data.jobId}`);
+  console.log(`Job ${job.data.jobId} completed`);
 });
 
-console.log('Worker started — draining replicate-dispatch at 5/sec');
+console.log('Worker started — processing tryon-jobs, concurrency 5');

@@ -1,8 +1,16 @@
 // queue/queue.js
-// One queue handles both pipeline steps ("tryon" and "upscale"), so a single
-// rate limiter caps total dispatch to Replicate regardless of which step —
-// this is what keeps a traffic spike from blowing through Replicate's
-// 600 predictions/minute account-wide limit.
+// One job per try-on request now — the provider modules (providers/*.js)
+// internally handle every pipeline step (body-check, garment classify,
+// cleanup, generation, anatomy-check, upscale) within a single awaited
+// call, so there's no need for this queue to know about individual steps
+// the way an earlier webhook-based version did. See queue/worker.js's
+// header for the full rewrite rationale.
+//
+// The queue still exists — and still matters — because it's what lets the
+// API respond instantly (job accepted, here's an ID) while a separate
+// worker process actually burns through Replicate calls at a controlled
+// rate, rather than every incoming request hitting Replicate directly and
+// piling up against its rate limits during a traffic spike.
 
 const { Queue } = require('bullmq');
 const IORedis = require('ioredis');
@@ -14,18 +22,18 @@ function makeConnection() {
   return new IORedis(url, { maxRetriesPerRequest: null });
 }
 
-const replicateDispatchQueue = new Queue('replicate-dispatch', {
+const tryonQueue = new Queue('tryon-jobs', {
   connection: makeConnection(),
   defaultJobOptions: {
-    attempts: 3,
-    backoff: { type: 'exponential', delay: 2000 },
+    attempts: 2, // a full try-on pipeline is expensive — don't retry too aggressively
+    backoff: { type: 'exponential', delay: 5000 },
     removeOnComplete: 1000, // keep last 1000 for debugging, drop the rest
     removeOnFail: 5000,
   },
 });
 
-async function enqueueStep(jobId, step) {
-  await replicateDispatchQueue.add(step, { jobId, step });
+async function enqueueJob(jobId) {
+  await tryonQueue.add('tryon', { jobId });
 }
 
-module.exports = { replicateDispatchQueue, enqueueStep, makeConnection };
+module.exports = { tryonQueue, enqueueJob, makeConnection };
