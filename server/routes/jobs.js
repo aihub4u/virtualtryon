@@ -12,6 +12,19 @@
 // (body-check, garment classification, cleanup, anatomy-check, upscale)
 // automatically, with no risk of drifting out of sync with the
 // synchronous route the way an earlier version of this file did.
+//
+// AUTH: this endpoint is for trusted backend callers only (a WhatsApp bot
+// server, another internal service) — NOT meant for public/browser traffic.
+// Every POST requires a valid x-api-key header matching BOT_API_KEY; there
+// is no public/unauthenticated fallback. An earlier version of this file
+// allowed unauthenticated calls under a stricter per-IP limit — removed on
+// request, since this route is exclusively for the bot integration.
+//
+// RATE LIMITING: keyed per END USER (a userId in the request body — e.g.
+// the WhatsApp phone number), not per IP, since the bot's own server IP is
+// shared across every user going through it. This means many different
+// real users can use the bot simultaneously without throttling each other,
+// while a single user spamming requests still gets capped.
 
 const express = require('express');
 const { randomUUID } = require('crypto');
@@ -21,21 +34,34 @@ const { enqueueJob } = require('../queue/queue');
 
 const router = express.Router();
 
-// Cost guardrail: each generation costs real money (Replicate + storage).
-// This caps abuse from a single IP; tune per your actual campaign traffic
-// shape (e.g. behind a CDN, consider rate limiting per session/device ID
-// instead if many real users share office/mobile-carrier IPs).
-const createLimiter = rateLimit({
+function requireApiKey(req, res, next) {
+  const key = req.header('x-api-key');
+  if (!process.env.BOT_API_KEY) {
+    // Misconfiguration, not a caller problem — fail closed with a clear
+    // server-side signal rather than silently accepting everything.
+    console.error('BOT_API_KEY is not set — rejecting all /api/jobs requests until it is configured.');
+    return res.status(503).json({ error: 'This endpoint is not yet configured. Set BOT_API_KEY on the server.' });
+  }
+  if (!key || key !== process.env.BOT_API_KEY) {
+    return res.status(401).json({ error: 'Missing or invalid x-api-key header.' });
+  }
+  next();
+}
+
+// Capped per END USER (userId in the request body), not per IP — see file
+// header. Applied only after requireApiKey passes.
+const perUserLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 10, // 10 job creations per minute per IP
+  max: 6, // generations are not free — 6/min/user is generous for a real person, not a script
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many requests — please wait a moment and try again.' },
+  keyGenerator: (req) => req.body?.userId || req.ip, // falls back to IP if userId is missing
+  message: { error: 'Too many requests from this user — please wait a moment and try again.' },
 });
 
-router.post('/', createLimiter, async (req, res) => {
+router.post('/', requireApiKey, perUserLimiter, async (req, res) => {
   try {
-    const { selfieUrl, garmentUrl, turbo, selectedProvider, skipBodyCheck, category, description } = req.body || {};
+    const { selfieUrl, garmentUrl, turbo, selectedProvider, skipBodyCheck, category, description, userId } = req.body || {};
 
     if (!selfieUrl || !garmentUrl) {
       return res.status(400).json({ error: 'Both "selfieUrl" and "garmentUrl" are required.' });
@@ -57,6 +83,7 @@ router.post('/', createLimiter, async (req, res) => {
       skipBodyCheck: skipBodyCheck ? 'true' : 'false',
       category: category || '',
       description: description || '',
+      userId: userId || '',
     });
     await enqueueJob(id);
 
@@ -71,7 +98,7 @@ router.post('/', createLimiter, async (req, res) => {
   }
 });
 
-router.get('/:id', async (req, res) => {
+router.get('/:id', requireApiKey, async (req, res) => {
   try {
     const job = await jobStore.getJob(req.params.id);
     if (!job) {

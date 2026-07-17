@@ -87,7 +87,15 @@ const worker = new Worker(
   },
   {
     connection: makeConnection(),
-    concurrency: 5, // how many jobs this worker processes in parallel
+    // Bumped from the original testing default of 5 — for real WhatsApp bot
+    // traffic (many users trying this concurrently), 5 meant a worst-case
+    // wait of several minutes for the last person in a burst of 50+ users.
+    // At 15, that same burst clears in roughly 1-1.5 minutes worst-case.
+    // Each job makes 2-4 Replicate calls, so 15 concurrent jobs stays
+    // comfortably under Replicate's 600 requests/minute account-wide limit
+    // even during a heavy burst. Raise further if traffic grows enough to
+    // need it — check Replicate's dashboard for actual call volume first.
+    concurrency: 15,
   }
 );
 
