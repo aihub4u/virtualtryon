@@ -35,8 +35,13 @@ async function createJob(id, data) {
 
 async function updateJob(id, patch) {
   const key = jobKey(id);
+  // No expire() call here anymore — was refreshing the 48h TTL on every
+  // single status update (queued -> processing -> completed), doubling
+  // Redis command usage for no real benefit: jobs finish in well under a
+  // minute, nowhere near the TTL boundary. TTL is set once at creation and
+  // that's sufficient. This alone roughly halves write-side command usage,
+  // relevant if you're near Upstash's free-tier command cap.
   await redis.hset(key, { ...patch, updatedAt: Date.now().toString() });
-  await redis.expire(key, JOB_TTL_SECONDS); // refresh TTL on update
 }
 
 async function getJob(id) {

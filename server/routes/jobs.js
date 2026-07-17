@@ -127,19 +127,18 @@ router.get('/:id', requireApiKey, async (req, res) => {
       }
     }
 
+    // fullBodyDetected can be true, false, or null (check skipped/not yet
+    // run) — cast to a literal "true"/"false" string per request. null stays
+    // null (not stringified) since it isn't actually a true/false answer,
+    // it means "no detection result available yet or the check was skipped."
+    const fullBodyDetectedRaw = bodyDetection?.fullBodyDetected ?? null;
+    const fullBodyDetected = fullBodyDetectedRaw === null ? null : String(fullBodyDetectedRaw);
+
     res.json({
       id: req.params.id,
       status: job.status,
       imageUrl: result?.imageUrl ?? null,
-      provider: job.provider || null,
-      upscaled: result?.upscaled ?? null,
-      upscaleWarning: result?.upscaleWarning ?? null,
-      bodyDetection,
-      garmentClassification: result?.garmentClassification ?? null,
-      garmentCleaned: result?.garmentCleaned ?? null,
-      anatomyWarning: result?.anatomyWarning ?? null,
-      finalSizeBytes: result?.finalSizeBytes ?? null,
-      storageWarning: result?.storageWarning ?? null,
+      fullBodyDetected,
       error: job.error || null,
     });
   } catch (err) {
